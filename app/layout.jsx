@@ -1,6 +1,5 @@
 import { ClerkProvider, SignInButton, SignUpButton, Show, UserButton } from "@clerk/nextjs";
 import Sidebar from "./components/Sidebar";
-import Logo from "./components/Logo";
 import { AppProvider } from "./context/AppContext";
 
 export const metadata = {
@@ -29,13 +28,6 @@ export default function RootLayout({ children }) {
                     flexShrink: 0,
                   }}
                 >
-                  {/* Brand */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                    <Logo size={28} />
-                    <span style={{ fontSize: 15, fontWeight: 800, color: "#0f172a", letterSpacing: -0.4 }}>
-                      ProofMade
-                    </span>
-                  </div>
                   {/* Auth controls */}
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <Show when="signed-out">
