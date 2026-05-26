@@ -185,6 +185,18 @@ ${JSON.stringify(analysisData, null, 2)}
       result = JSON.parse(m[0]);
     }
 
+    // 6b. 将 Figma frame nodeId 注入到每个 frame 结果，供后续获取缩略图使用
+    const pageFrames = (selectedPage?.children || [])
+      .filter((n) => n.type === "FRAME" || n.type === "COMPONENT")
+      .slice(0, 8);
+    const frameIdMap = Object.fromEntries(pageFrames.map((f) => [f.name, f.id]));
+    if (Array.isArray(result.frames)) {
+      result.frames = result.frames.map((f) => ({
+        ...f,
+        nodeId: frameIdMap[f.name] ?? null,
+      }));
+    }
+
     // 7. 保存到 Supabase（fire-and-forget，不阻塞响应）
     supabase.from("scans").insert({
       user_id:      userId ?? null,
