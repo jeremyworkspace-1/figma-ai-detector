@@ -327,6 +327,47 @@ export default function NewScan() {
         {/* Results */}
         {urlResult && !urlLoading && (
           <div style={{ marginTop: 16 }}>
+
+            {/* Student name auto-detection result */}
+            {(() => {
+              const sourceLabel = {
+                layer:    "图层文字识别",
+                filename: "文件名提取",
+                modifier: "Figma 账号推断",
+              };
+              return urlResult.studentName ? (
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "9px 14px", marginBottom: 10,
+                  background: "#f0f9ff",
+                  border: "1px solid #bae6fd",
+                  borderRadius: 9, fontSize: 13,
+                }}>
+                  <span style={{ fontSize: 15 }}>👤</span>
+                  <span style={{ fontWeight: 700, color: "#0369a1" }}>{urlResult.studentName}</span>
+                  <span style={{
+                    fontSize: 10, padding: "2px 8px", borderRadius: 20,
+                    background: "#e0f2fe", color: "#0284c7", fontWeight: 600,
+                  }}>
+                    {sourceLabel[urlResult.studentNameSource] || "自动识别"}
+                  </span>
+                  <span style={{ marginLeft: "auto", fontSize: 11, color: "#7dd3fc" }}>
+                    已自动填入 Submissions
+                  </span>
+                </div>
+              ) : (
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "8px 14px", marginBottom: 10,
+                  background: "#f8fafc", border: "1px solid #e2e8f0",
+                  borderRadius: 9, fontSize: 12, color: "#94a3b8",
+                }}>
+                  <span>👤</span>
+                  <span>未能自动识别学生姓名，请到 Submissions 手动填写</span>
+                </div>
+              );
+            })()}
+
             {/* Overall score */}
             <div style={{
               background: "#ffffff",

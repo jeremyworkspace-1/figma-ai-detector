@@ -269,6 +269,13 @@ function FrameReviewCard({ frame, thumbnail, thumbLoading, review, onReview }) {
   );
 }
 
+// ─── Source label map ──────────────────────────────────────────────────────────
+const NAME_SOURCE_LABEL = {
+  layer:    "图层文字识别",
+  filename: "文件名提取",
+  modifier: "Figma账号推断",
+};
+
 // ─── ResultCard ────────────────────────────────────────────────────────────────
 function ResultCard({ scan: initialScan }) {
   const [expanded, setExpanded] = useState(false);
@@ -280,10 +287,11 @@ function ResultCard({ scan: initialScan }) {
   const [thumbLoading, setThumbLoading] = useState(false);
   const [reviews, setReviews] = useState(initialScan.teacher_reviews || {});
 
-  const score  = initialScan.ai_score;
-  const color  = score >= 70 ? "#ef4444" : score >= 40 ? "#f59e0b" : "#22c55e";
-  const badge  = score >= 70 ? "⚠ 高度疑似AI" : score >= 40 ? "◑ 部分疑似" : "✓ 原创可信";
-  const frames = initialScan.analysis?.frames || [];
+  const score      = initialScan.ai_score;
+  const color      = score >= 70 ? "#ef4444" : score >= 40 ? "#f59e0b" : "#22c55e";
+  const badge      = score >= 70 ? "⚠ 高度疑似AI" : score >= 40 ? "◑ 部分疑似" : "✓ 原创可信";
+  const frames     = initialScan.analysis?.frames || [];
+  const nameSource = initialScan.analysis?.studentNameSource ?? null;  // set when name was auto-detected
   const reviewedCount = Object.keys(reviews).length;
   const dateStr = new Date(initialScan.created_at).toLocaleDateString("zh-CN");
 
@@ -382,41 +390,57 @@ function ResultCard({ scan: initialScan }) {
 
           {/* ── Student name editor ── */}
           <div style={{
-            display: "flex", alignItems: "center", gap: 8, marginBottom: 16,
-            padding: "10px 12px", background: "#ffffff",
+            marginBottom: 16, padding: "10px 12px", background: "#ffffff",
             border: "1px solid #e2e8f0", borderRadius: 9,
           }}>
-            <span style={{ fontSize: 12, color: "#64748b", fontWeight: 600, flexShrink: 0 }}>
-              👤 学生姓名
-            </span>
-            <input
-              value={studentName}
-              onChange={(e) => { setStudentName(e.target.value); setNameDirty(true); setNameSaved(false); }}
-              onKeyDown={(e) => e.key === "Enter" && nameDirty && saveName()}
-              placeholder="填写学生姓名…"
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                flex: 1, padding: "5px 8px", borderRadius: 6,
-                border: nameDirty ? "1px solid #93c5fd" : "1px solid transparent",
-                background: nameDirty ? "#ffffff" : "transparent",
-                fontSize: 13, color: "#0f172a", fontFamily: "inherit",
-                outline: "none", transition: "all 0.15s",
-              }}
-            />
-            {nameSaved && <span style={{ fontSize: 12, color: "#16a34a", flexShrink: 0 }}>✓ 已保存</span>}
-            {nameDirty && (
-              <button
-                onClick={(e) => { e.stopPropagation(); saveName(); }}
-                disabled={nameSaving}
-                style={{
-                  padding: "5px 12px", borderRadius: 6, border: "none",
-                  background: "#2563eb", color: "#ffffff",
-                  fontSize: 12, fontWeight: 600, cursor: "pointer", flexShrink: 0,
-                }}
-              >
-                {nameSaving ? "保存中…" : "保存"}
-              </button>
+            {/* Auto-detect badge row — shown only when name came from AI and not yet manually edited */}
+            {nameSource && !nameDirty && studentName && (
+              <div style={{
+                display: "flex", alignItems: "center", gap: 6, marginBottom: 7,
+                fontSize: 11, color: "#0284c7",
+              }}>
+                <span style={{
+                  padding: "2px 8px", borderRadius: 20,
+                  background: "#e0f2fe", fontWeight: 600,
+                }}>
+                  ✨ 自动识别 · {NAME_SOURCE_LABEL[nameSource] || nameSource}
+                </span>
+                <span style={{ color: "#94a3b8" }}>点击下方输入框可修改</span>
+              </div>
             )}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 12, color: "#64748b", fontWeight: 600, flexShrink: 0 }}>
+                👤 学生姓名
+              </span>
+              <input
+                value={studentName}
+                onChange={(e) => { setStudentName(e.target.value); setNameDirty(true); setNameSaved(false); }}
+                onKeyDown={(e) => e.key === "Enter" && nameDirty && saveName()}
+                placeholder="填写学生姓名…"
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  flex: 1, padding: "5px 8px", borderRadius: 6,
+                  border: nameDirty ? "1px solid #93c5fd" : "1px solid transparent",
+                  background: nameDirty ? "#ffffff" : "transparent",
+                  fontSize: 13, color: "#0f172a", fontFamily: "inherit",
+                  outline: "none", transition: "all 0.15s",
+                }}
+              />
+              {nameSaved && <span style={{ fontSize: 12, color: "#16a34a", flexShrink: 0 }}>✓ 已保存</span>}
+              {nameDirty && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); saveName(); }}
+                  disabled={nameSaving}
+                  style={{
+                    padding: "5px 12px", borderRadius: 6, border: "none",
+                    background: "#2563eb", color: "#ffffff",
+                    fontSize: 12, fontWeight: 600, cursor: "pointer", flexShrink: 0,
+                  }}
+                >
+                  {nameSaving ? "保存中…" : "保存"}
+                </button>
+              )}
+            </div>
           </div>
 
           {/* ── AI summary ── */}

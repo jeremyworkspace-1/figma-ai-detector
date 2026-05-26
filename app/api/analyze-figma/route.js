@@ -88,6 +88,18 @@ function extractAnalysisData(figmaData, pageId) {
   };
 }
 
+// ─── 从 Figma lastModifiedBy 字段提取可读名称 ──────────────────────────────────
+function extractLastModifiedByName(lmb) {
+  if (!lmb) return null;
+  if (typeof lmb === "object") return lmb.handle || lmb.name || lmb.email || null;
+  if (typeof lmb === "string") {
+    // Figma user IDs are numeric strings like "123456789"; skip those
+    if (/^\d+$/.test(lmb.trim())) return null;
+    return lmb.trim() || null;
+  }
+  return null;
+}
+
 // ─── POST handler ──────────────────────────────────────────────────────────────
 export async function POST(request) {
   try {
@@ -134,12 +146,24 @@ export async function POST(request) {
     const pageName = selectedPage?.name || pageId || "";
     const analysisData = extractAnalysisData(figmaData, pageId);
 
+    // 4b. 提取辅助姓名识别的元数据
+    const fileName = figmaData.name || "";
+    const lastModifiedByName = extractLastModifiedByName(figmaData.lastModifiedBy);
+
+    // 4c. 提取封面 Frame（最可能含署名）的文字，专门给 Claude 识别姓名
+    const firstPage = figmaData.document?.children?.[0];
+    const coverFrame = (selectedPage || firstPage)?.children?.find(
+      (n) => (n.type === "FRAME" || n.type === "COMPONENT") &&
+             /cover|封面|首页|title|intro/i.test(n.name)
+    ) || (selectedPage || firstPage)?.children?.[0];
+    const coverTexts = coverFrame ? extractTexts(coverFrame, [], 20) : [];
+
     // 5. 调用 Claude 分析
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
     const message = await anthropic.messages.create({
       model: "claude-opus-4-5",
-      max_tokens: 1500,
+      max_tokens: 1800,
       messages: [
         {
           role: "user",
@@ -157,8 +181,25 @@ ${JSON.stringify(analysisData, null, 2)}
 4. **色彩使用**：是否严格遵循设计系统调色板，缺乏个人审美调整
 5. **设计判断**：是否缺乏手工调整痕迹、设计决策是否过于"完美"
 
+---
+
+**附加任务：同时识别提交作业的学生姓名**
+
+元数据提示：
+- Figma 文件名：「${fileName}」
+- 最后修改者账号：「${lastModifiedByName || "未知"}」
+- 封面/首页 Frame 中的文字（最可能含署名）：${coverTexts.length ? JSON.stringify(coverTexts) : "（无）"}
+
+识别规则（按优先级）：
+1. 图层文字中的人名：署名、"姓名：XX"、"学号+姓名"、"设计者：XX" 等格式中出现的名字
+2. 文件名中包含的人名（如「张三的作业」→「张三」；「HCI_WeiChen」→「Wei Chen」）
+3. 最后修改者账号（若看起来像真实人名而非随机字符串）
+4. 无法识别则返回 null
+
 请严格以如下 JSON 格式返回，不要有任何其他文字：
 {
+  "studentName": <识别到的学生姓名字符串，无法识别则返回 null>,
+  "studentNameSource": <"layer"（来自图层文字）| "filename"（来自文件名）| "modifier"（来自Figma账号）| null>,
   "overallScore": <0-100 整数，越高越像 AI 生成>,
   "label": <"高度疑似AI" | "部分疑似" | "原创可信">,
   "summary": <2-3 句综合评价>,
@@ -197,10 +238,17 @@ ${JSON.stringify(analysisData, null, 2)}
       }));
     }
 
+    // 6c. 学生姓名优先级：Claude图层识别 > Claude文件名提取 > lastModifiedBy > null
+    if (!result.studentName && lastModifiedByName) {
+      result.studentName = lastModifiedByName;
+      result.studentNameSource = "modifier";
+    }
+    // studentName remains null if nothing was found (teacher fills in manually)
+
     // 7. 保存到 Supabase（fire-and-forget，不阻塞响应）
     supabase.from("scans").insert({
       user_id:      userId ?? null,
-      student_name: figmaData.name ?? null,
+      student_name: result.studentName ?? null,
       figma_url:    figmaUrl,
       page_name:    pageName,
       ai_score:     result.overallScore,
