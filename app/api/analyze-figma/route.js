@@ -55,16 +55,25 @@ function countLayers(node) {
   return 1 + (node.children || []).reduce((s, c) => s + countLayers(c), 0);
 }
 
-// ─── 从完整 Figma 数据中提取分析所需信息
-function extractAnalysisData(figmaData) {
-  const pages = (figmaData.document?.children || []).slice(0, 3); // 最多 3 个 page
+// ─── 从完整 Figma 数据中提取分析所需信息（pageId 指定则只分析该 Page）
+function extractAnalysisData(figmaData, pageId) {
+  let pages = figmaData.document?.children || [];
+
+  if (pageId) {
+    // 只保留用户选中的 page
+    pages = pages.filter((p) => p.id === pageId);
+  } else {
+    // 没有指定则取前 3 个 page
+    pages = pages.slice(0, 3);
+  }
+
   return {
     fileName: figmaData.name,
     pages: pages.map((page) => ({
       name: page.name,
       frames: (page.children || [])
         .filter((n) => n.type === "FRAME" || n.type === "COMPONENT")
-        .slice(0, 6) // 每 page 最多 6 个 Frame
+        .slice(0, 8) // 单页最多 8 个 Frame
         .map((frame) => ({
           name: frame.name,
           type: frame.type,
@@ -80,7 +89,7 @@ function extractAnalysisData(figmaData) {
 // ─── POST handler ──────────────────────────────────────────────────────────────
 export async function POST(request) {
   try {
-    const { figmaUrl } = await request.json();
+    const { figmaUrl, pageId } = await request.json();
 
     if (!figmaUrl?.trim()) {
       return NextResponse.json({ error: "请提供 Figma 链接" }, { status: 400 });
@@ -117,8 +126,8 @@ export async function POST(request) {
 
     const figmaData = await figmaRes.json();
 
-    // 4. 提取分析数据
-    const analysisData = extractAnalysisData(figmaData);
+    // 4. 提取分析数据（只分析选中的 page）
+    const analysisData = extractAnalysisData(figmaData, pageId);
 
     // 5. 调用 Claude 分析
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
