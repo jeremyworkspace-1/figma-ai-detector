@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { auth } from "@clerk/nextjs/server";
+import { supabase } from "../../lib/supabase";
 
 // ─── Figma URL 解析 ────────────────────────────────────────────────────────────
 function parseFigmaKey(url) {
@@ -89,6 +91,7 @@ function extractAnalysisData(figmaData, pageId) {
 // ─── POST handler ──────────────────────────────────────────────────────────────
 export async function POST(request) {
   try {
+    const { userId } = await auth();
     const { figmaUrl, pageId } = await request.json();
 
     if (!figmaUrl?.trim()) {
@@ -127,6 +130,8 @@ export async function POST(request) {
     const figmaData = await figmaRes.json();
 
     // 4. 提取分析数据（只分析选中的 page）
+    const selectedPage = (figmaData.document?.children || []).find((p) => p.id === pageId);
+    const pageName = selectedPage?.name || pageId || "";
     const analysisData = extractAnalysisData(figmaData, pageId);
 
     // 5. 调用 Claude 分析
@@ -179,6 +184,18 @@ ${JSON.stringify(analysisData, null, 2)}
       if (!m) return NextResponse.json({ error: "分析结果解析失败，请重试" }, { status: 500 });
       result = JSON.parse(m[0]);
     }
+
+    // 7. 保存到 Supabase（fire-and-forget，不阻塞响应）
+    supabase.from("scans").insert({
+      user_id:      userId ?? null,
+      student_name: figmaData.name ?? null,
+      figma_url:    figmaUrl,
+      page_name:    pageName,
+      ai_score:     result.overallScore,
+      analysis:     result,
+    }).then(({ error }) => {
+      if (error) console.error("[analyze-figma] supabase insert:", error.message);
+    });
 
     return NextResponse.json(result);
   } catch (err) {
