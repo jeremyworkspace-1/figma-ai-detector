@@ -46,7 +46,7 @@ function ScoreRing({ score, size = 80 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
       <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#1e293b" strokeWidth={8} />
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#e2e8f0" strokeWidth={8} />
         <circle
           cx={size / 2} cy={size / 2} r={radius} fill="none"
           stroke={color} strokeWidth={8}
@@ -74,10 +74,10 @@ function SignalBar({ label, value, index }) {
   return (
     <div style={{ marginBottom: 8 }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-        <span style={{ fontSize: 12, color: "#94a3b8" }}>{label}</span>
+        <span style={{ fontSize: 12, color: "#64748b" }}>{label}</span>
         <span style={{ fontSize: 12, color, fontWeight: 600 }}>{value}%</span>
       </div>
-      <div style={{ height: 6, background: "#1e293b", borderRadius: 3, overflow: "hidden" }}>
+      <div style={{ height: 6, background: "#e2e8f0", borderRadius: 3, overflow: "hidden" }}>
         <div
           style={{
             height: "100%", width: `${value}%`, background: color,
@@ -97,8 +97,8 @@ function ResultCard({ result, onExpand, expanded }) {
     <div
       onClick={onExpand}
       style={{
-        background: expanded ? "#0f172a" : "#0d1b2a",
-        border: `1px solid ${expanded ? aiColor + "60" : "#1e3a5f"}`,
+        background: expanded ? "#f1f5f9" : "#ffffff",
+        border: `1px solid ${expanded ? aiColor + "40" : "#e2e8f0"}`,
         borderLeft: `3px solid ${aiColor}`,
         borderRadius: 12,
         padding: "16px 20px",
@@ -110,7 +110,7 @@ function ResultCard({ result, onExpand, expanded }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-            <span style={{ fontSize: 15, fontWeight: 700, color: "#e2e8f0", fontFamily: "'Noto Serif SC', serif" }}>
+            <span style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", fontFamily: "'Noto Serif SC', serif" }}>
               {result.student}
             </span>
             <span style={{
@@ -120,24 +120,24 @@ function ResultCard({ result, onExpand, expanded }) {
               {badge}
             </span>
           </div>
-          <div style={{ fontSize: 12, color: "#475569" }}>{result.file} · {result.time}</div>
+          <div style={{ fontSize: 12, color: "#94a3b8" }}>{result.file} · {result.time}</div>
         </div>
         <ScoreRing score={result.aiScore} size={70} />
       </div>
 
       {expanded && (
-        <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid #1e3a5f" }}>
+        <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid #e2e8f0" }}>
           <div style={{ marginBottom: 14 }}>
             {SCAN_SIGNALS.map((sig, i) => (
               <SignalBar key={sig.id} label={sig.label} value={result.signals[i]} index={i} />
             ))}
           </div>
           <div>
-            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6, letterSpacing: 1 }}>检测标记</div>
+            <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 6, letterSpacing: 1 }}>检测标记</div>
             {result.flags.map((f, i) => (
               <div key={i} style={{
-                fontSize: 12, color: "#94a3b8", padding: "4px 10px", marginBottom: 4,
-                background: "#0f172a", borderRadius: 6, borderLeft: "2px solid #334155"
+                fontSize: 12, color: "#64748b", padding: "4px 10px", marginBottom: 4,
+                background: "#f8fafc", borderRadius: 6, borderLeft: "2px solid #e2e8f0"
               }}>
                 {f}
               </div>
@@ -167,12 +167,12 @@ function UploadZone({ onUpload, scanning }) {
       onDrop={handleDrop}
       onClick={() => ref.current?.click()}
       style={{
-        border: `2px dashed ${dragging ? "#3b82f6" : "#1e3a5f"}`,
+        border: `2px dashed ${dragging ? "#3b82f6" : "#cbd5e1"}`,
         borderRadius: 16,
         padding: "36px 24px",
         textAlign: "center",
         cursor: "pointer",
-        background: dragging ? "#0c1a2e" : "transparent",
+        background: dragging ? "#eff6ff" : "transparent",
         transition: "all 0.2s",
         marginBottom: 24,
       }}
@@ -183,16 +183,16 @@ function UploadZone({ onUpload, scanning }) {
         <div>
           <div style={{ fontSize: 28, marginBottom: 8 }}>⚡</div>
           <div style={{ color: "#3b82f6", fontSize: 14, fontWeight: 600 }}>正在扫描分析中…</div>
-          <div style={{ color: "#475569", fontSize: 12, marginTop: 4 }}>AI特征检测运行中</div>
+          <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4 }}>AI特征检测运行中</div>
         </div>
       ) : (
         <div>
           <div style={{ fontSize: 32, marginBottom: 10 }}>🔍</div>
-          <div style={{ color: "#94a3b8", fontSize: 14 }}>拖拽上传学生 Figma 文件</div>
-          <div style={{ color: "#475569", fontSize: 12, marginTop: 4 }}>.fig · .pdf · 截图均可识别</div>
+          <div style={{ color: "#64748b", fontSize: 14 }}>拖拽上传学生 Figma 文件</div>
+          <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4 }}>.fig · .pdf · 截图均可识别</div>
           <div style={{
             marginTop: 14, display: "inline-block", padding: "8px 20px",
-            background: "#1e3a5f", borderRadius: 8, color: "#60a5fa", fontSize: 13, fontWeight: 600
+            background: "#dbeafe", borderRadius: 8, color: "#2563eb", fontSize: 13, fontWeight: 600
           }}>
             选择文件
           </div>
@@ -230,15 +230,15 @@ export default function FigmaAIDetector() {
   return (
     <div style={{
       minHeight: "100vh",
-      background: "#060e1a",
+      background: "#f8fafc",
       fontFamily: "'Inter', 'PingFang SC', sans-serif",
-      color: "#e2e8f0",
+      color: "#0f172a",
       padding: "0 0 40px",
     }}>
       {/* Header */}
       <div style={{
-        background: "linear-gradient(135deg, #0a1628 0%, #0d1f3c 100%)",
-        borderBottom: "1px solid #1e3a5f",
+        background: "linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%)",
+        borderBottom: "1px solid #e2e8f0",
         padding: "20px 28px 16px",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 2 }}>
@@ -250,7 +250,7 @@ export default function FigmaAIDetector() {
           }}>🔬</div>
           <div>
             <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.5 }}>Figma AI 检测器</div>
-            <div style={{ fontSize: 11, color: "#475569", letterSpacing: 1 }}>PROTOTYPE AUTHENTICITY SCANNER</div>
+            <div style={{ fontSize: 11, color: "#94a3b8", letterSpacing: 1 }}>PROTOTYPE AUTHENTICITY SCANNER</div>
           </div>
         </div>
       </div>
@@ -259,18 +259,18 @@ export default function FigmaAIDetector() {
         {/* Stats Row */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 20 }}>
           {[
-            { label: "已扫描", value: results.length, unit: "份", color: "#60a5fa" },
+            { label: "已扫描", value: results.length, unit: "份", color: "#2563eb" },
             { label: "平均AI率", value: `${avgScore}%`, unit: "", color: avgScore >= 60 ? "#f59e0b" : "#22c55e" },
             { label: "高风险", value: highRisk, unit: "份", color: "#ef4444" },
           ].map((s) => (
             <div key={s.label} style={{
-              background: "#0d1b2a", border: "1px solid #1e3a5f",
+              background: "#ffffff", border: "1px solid #e2e8f0",
               borderRadius: 12, padding: "14px 12px", textAlign: "center"
             }}>
               <div style={{ fontSize: 22, fontWeight: 800, color: s.color, fontFamily: "monospace" }}>
                 {s.value}{s.unit}
               </div>
-              <div style={{ fontSize: 11, color: "#475569", marginTop: 2 }}>{s.label}</div>
+              <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{s.label}</div>
             </div>
           ))}
         </div>
@@ -280,8 +280,8 @@ export default function FigmaAIDetector() {
           {[["results", "检测结果"], ["upload", "上传文件"]].map(([id, label]) => (
             <button key={id} onClick={() => setTab(id)} style={{
               padding: "8px 16px", borderRadius: 8, border: "none", cursor: "pointer",
-              background: tab === id ? "#1e3a5f" : "transparent",
-              color: tab === id ? "#60a5fa" : "#475569",
+              background: tab === id ? "#dbeafe" : "transparent",
+              color: tab === id ? "#2563eb" : "#94a3b8",
               fontSize: 13, fontWeight: 600,
             }}>
               {label}
@@ -296,8 +296,8 @@ export default function FigmaAIDetector() {
         {tab === "results" && (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, alignItems: "center" }}>
-              <div style={{ fontSize: 12, color: "#475569" }}>点击卡片查看详细分析</div>
-              <div style={{ fontSize: 11, color: "#334155", padding: "3px 10px", border: "1px solid #1e3a5f", borderRadius: 20 }}>
+              <div style={{ fontSize: 12, color: "#94a3b8" }}>点击卡片查看详细分析</div>
+              <div style={{ fontSize: 11, color: "#64748b", padding: "3px 10px", border: "1px solid #cbd5e1", borderRadius: 20 }}>
                 共 {results.length} 份
               </div>
             </div>
@@ -315,10 +315,10 @@ export default function FigmaAIDetector() {
       {/* Legend */}
       <div style={{ padding: "0 20px", marginTop: 20 }}>
         <div style={{
-          background: "#0d1b2a", border: "1px solid #1e3a5f",
+          background: "#ffffff", border: "1px solid #e2e8f0",
           borderRadius: 12, padding: "14px 16px"
         }}>
-          <div style={{ fontSize: 11, color: "#475569", marginBottom: 10, letterSpacing: 1 }}>评分说明</div>
+          <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10, letterSpacing: 1 }}>评分说明</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {[
               { color: "#22c55e", range: "0–39%", desc: "原创可信，手工设计特征明显" },
@@ -329,7 +329,7 @@ export default function FigmaAIDetector() {
                 <div style={{ width: 10, height: 10, borderRadius: 2, background: l.color, marginTop: 2, flexShrink: 0 }} />
                 <div>
                   <span style={{ fontSize: 12, color: l.color, fontWeight: 700, fontFamily: "monospace" }}>{l.range} </span>
-                  <span style={{ fontSize: 12, color: "#64748b" }}>{l.desc}</span>
+                  <span style={{ fontSize: 12, color: "#94a3b8" }}>{l.desc}</span>
                 </div>
               </div>
             ))}
