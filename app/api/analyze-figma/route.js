@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { auth } from "@clerk/nextjs/server";
 import { supabase } from "../../lib/supabase";
+import { parseClaudeJSON } from "../../lib/parseClaudeJSON";
 
 // ─── Figma URL 解析 ────────────────────────────────────────────────────────────
 function parseFigmaKey(url) {
@@ -195,53 +196,46 @@ ${JSON.stringify(analysisData, null, 2)}
 \`\`\`
 
 请从以下维度判断该设计稿的 AI 生成可能性：
-1. **图层命名**：是否机械规范（Frame1、Button/Primary、Group 123）
-2. **组件结构**：是否高度模板化、层级过于整齐
-3. **文字内容**：是否为典型占位符（Lorem ipsum、标题文字、按钮文本）
-4. **色彩使用**：是否严格遵循设计系统调色板，缺乏个人审美调整
-5. **设计判断**：是否缺乏手工调整痕迹、设计决策是否过于"完美"
+1. 图层命名：是否机械规范（Frame1、Button/Primary、Group 123）
+2. 组件结构：是否高度模板化、层级过于整齐
+3. 文字内容：是否为典型占位符（Lorem ipsum、标题文字、按钮文本）
+4. 色彩使用：是否严格遵循设计系统调色板，缺乏个人审美调整
+5. 设计判断：是否缺乏手工调整痕迹、设计决策是否过于完美
 
 ---
 
-**附加任务：识别学生姓名（备用，版本历史已单独处理）**
+附加任务：识别学生姓名（备用，版本历史已单独处理）
 
 元数据提示：
-- Figma 文件名：「${fileName}」
-- 封面/首页 Frame 中的文字（最可能含署名）：${coverTexts.length ? JSON.stringify(coverTexts) : "（无）"}
+- Figma 文件名：${fileName}
+- 封面/首页 Frame 中的文字（最可能含署名）：${coverTexts.length ? coverTexts.join("、") : "（无）"}
 
 识别规则：
-1. 图层文字中的署名、"姓名：XX"、"设计者：XX"、学号旁边的名字
+1. 图层文字中的署名、姓名XX、设计者XX、学号旁边的名字
 2. 文件名中包含的人名（如「张三的作业」→「张三」；「HCI_WeiChen」→「Wei Chen」）
 3. 无法识别则返回 null
 
-请严格以如下 JSON 格式返回，不要有任何其他文字：
-{
-  "studentName": <识别到的学生姓名字符串，无法识别则返回 null>,
-  "studentNameSource": <"layer"（来自图层文字）| "filename"（来自文件名）| null>,
-  "overallScore": <0-100 整数，越高越像 AI 生成>,
-  "label": <"高度疑似AI" | "部分疑似" | "原创可信">,
-  "summary": <2-3 句综合评价>,
-  "frames": [
-    {
-      "name": <Frame 名称>,
-      "score": <0-100>,
-      "flags": [<具体发现的 AI 特征，1-3 条>]
-    }
-  ]
-}`,
+━━━ 输出格式要求（严格遵守，违反会导致系统崩溃）━━━
+
+1. 只输出一个 JSON 对象，前后不得有任何文字、说明或 markdown 代码块。
+2. 所有字符串值内部【禁止使用英文双引号 "】——如需引用词语，改用「」或（）。
+3. 每个字符串必须写在同一行，不能换行。
+4. 不得有尾随逗号（如 [1,2,] 或 {"a":1,} 均非法）。
+5. flags 数组中每条字符串独立，不要嵌套数组。
+
+输出示例（严格按照此结构，替换为实际分析内容）：
+{"studentName":"张三","studentNameSource":"layer","overallScore":72,"label":"高度疑似AI","summary":"图层命名高度规范，文字内容使用占位符，配色严格遵循调色板。整体缺乏手工调整痕迹，AI生成可能性较高。","frames":[{"name":"首页","score":80,"flags":["图层命名机械规范如Frame1和Button/Primary","文字内容为模板占位符","配色仅使用三种固定颜色"]},{"name":"详情页","score":65,"flags":["组件结构高度模板化","间距完全等分缺乏调整"]}]}
+
+现在请分析上述 Figma 数据并返回同结构的 JSON：`,
         },
       ],
     });
 
-    // 6. 解析 Claude 返回
-    const raw = message.content[0].text;
-    let result;
-    try {
-      result = JSON.parse(raw);
-    } catch {
-      const m = raw.match(/\{[\s\S]*\}/);
-      if (!m) return NextResponse.json({ error: "分析结果解析失败，请重试" }, { status: 500 });
-      result = JSON.parse(m[0]);
+    // 6. 解析 Claude 返回（使用容错解析器）
+    const raw = message.content[0].text.trim();
+    const result = parseClaudeJSON(raw);
+    if (result._parsedByFallback) {
+      console.warn("[analyze-figma] used fallback parser, raw response:", raw.slice(0, 300));
     }
 
     // 6b. 将 Figma frame nodeId 注入到每个 frame 结果，供后续获取缩略图使用
