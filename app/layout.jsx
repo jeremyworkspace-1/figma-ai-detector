@@ -20,7 +20,7 @@ export default function RootLayout({ children }) {
                 <header
                   style={{
                     display: "flex",
-                    justifyContent: "space-between",
+                    justifyContent: "flex-end",
                     alignItems: "center",
                     padding: "10px 20px",
                     background: "#ffffff",
