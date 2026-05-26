@@ -52,9 +52,10 @@ function ResultCard({ scan: initialScan }) {
   const reviewedCount = Object.keys(reviews).length;
   const dateStr = new Date(initialScan.created_at).toLocaleDateString("zh-CN");
 
-  // Lazy-load thumbnails on first expand
+  // Lazy-load thumbnails on first expand (skip for upload-sourced scans)
+  const isUploadScan = initialScan.figma_url?.startsWith("upload://");
   useEffect(() => {
-    if (!expanded || !initialScan.figma_url) return;
+    if (!expanded || !initialScan.figma_url || isUploadScan) return;
     const nodeIds = frames.map((f) => f.nodeId).filter(Boolean);
     if (!nodeIds.length || Object.keys(thumbnails).length > 0) return;
     setThumbLoading(true);

@@ -2,13 +2,15 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { supabase } from "../../lib/supabase";
 
-// POST { figmaUrl, pageName, result, studentName, frameReviews, finalJudgment, teacherNote }
+// POST { figmaUrl?, fileName?, pageName, result, studentName, frameReviews, finalJudgment, teacherNote }
+// figmaUrl is required for Figma scans; fileName is used instead for file-upload scans.
 // Called at Step 3 confirmation — first time this scan is written to the database.
 export async function POST(request) {
   try {
     const { userId } = await auth();
     const {
       figmaUrl,
+      fileName,   // present for upload-mode scans
       pageName,
       result,
       studentName,
@@ -17,9 +19,12 @@ export async function POST(request) {
       teacherNote,
     } = await request.json();
 
-    if (!figmaUrl || !result) {
+    if (!result || (!figmaUrl && !fileName)) {
       return NextResponse.json({ error: "缺少必要参数" }, { status: 400 });
     }
+
+    // For upload scans, store a synthetic reference so the row is identifiable.
+    const storedUrl = figmaUrl || `upload://${fileName}`;
 
     // Embed teacher's final judgment into the analysis JSONB so it's
     // available in Submissions without adding new columns.
@@ -37,7 +42,7 @@ export async function POST(request) {
       .insert({
         user_id:         userId ?? null,
         student_name:    studentName || null,
-        figma_url:       figmaUrl,
+        figma_url:       storedUrl,
         page_name:       pageName    || null,
         ai_score:        result.overallScore,
         analysis:        analysisWithJudgment,

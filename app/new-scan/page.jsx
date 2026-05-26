@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { FrameReviewCard } from "../components/FrameReviewCard";
 
 const FIGMA_URL_RE = /figma\.com\/(file|design|proto)\/([a-zA-Z0-9]+)/;
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024; // 8 MB client-side guard
+const ALLOWED_MIME = ["application/pdf", "image/png", "image/jpeg", "image/webp"];
 
 const NAME_SOURCE_LABEL = {
   version_history: "版本历史",
@@ -45,14 +47,14 @@ const JUDGMENT_OPTIONS = [
 // ─── Step Indicator ────────────────────────────────────────────────────────────
 function StepIndicator({ current }) {
   const steps = [
-    { label: "输入链接" },
+    { label: "选择来源" },
     { label: "审阅证据" },
     { label: "最终判断" },
   ];
   return (
     <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "center", marginBottom: 32 }}>
       {steps.flatMap((s, i) => {
-        const num  = i + 1;
+        const num    = i + 1;
         const done   = num < current;
         const active = num === current;
         const elems  = [
@@ -127,6 +129,18 @@ function Spinner({ color = "#2563eb", size = 16 }) {
   );
 }
 
+// ─── PDF icon ─────────────────────────────────────────────────────────────────
+function IconPDF() {
+  return (
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none"
+      stroke="#ef4444" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14,2 14,8 20,8" />
+      <text x="6" y="18" fontSize="5" fill="#ef4444" stroke="none" fontWeight="bold">PDF</text>
+    </svg>
+  );
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function NewScan() {
   const router = useRouter();
@@ -134,22 +148,35 @@ export default function NewScan() {
   // ── Step ────────────────────────────────────────────────────────────────────
   const [step, setStep] = useState(1);
 
-  // ── Step 1 state ────────────────────────────────────────────────────────────
-  const [figmaUrl,      setFigmaUrl]      = useState("");
-  const [pages,         setPages]         = useState([]);
-  const [selectedPageId,setSelectedPageId]= useState("");
-  const [pagesLoading,  setPagesLoading]  = useState(false);
-  const [pagesError,    setPagesError]    = useState("");
-  const [analyzing,     setAnalyzing]     = useState(false);
-  const [analyzeError,  setAnalyzeError]  = useState("");
+  // ── Input mode (figma | upload) ─────────────────────────────────────────────
+  const [inputMode,        setInputMode]        = useState("figma");
 
-  // ── Step 2 state ────────────────────────────────────────────────────────────
+  // ── Step 1 – Figma state ────────────────────────────────────────────────────
+  const [figmaUrl,       setFigmaUrl]       = useState("");
+  const [pages,          setPages]          = useState([]);
+  const [selectedPageId, setSelectedPageId] = useState("");
+  const [pagesLoading,   setPagesLoading]   = useState(false);
+  const [pagesError,     setPagesError]     = useState("");
+
+  // ── Step 1 – Upload state ────────────────────────────────────────────────────
+  const [uploadFile,       setUploadFile]       = useState(null);
+  const [uploadPreviewUrl, setUploadPreviewUrl] = useState(null);
+  const [isDragOver,       setIsDragOver]       = useState(false);
+  const fileInputRef = useRef(null);
+  // Track blob URL in a ref so we can revoke without stale-closure issues
+  const blobUrlRef = useRef(null);
+
+  // ── Shared analysis state ────────────────────────────────────────────────────
+  const [analyzing,    setAnalyzing]    = useState(false);
+  const [analyzeError, setAnalyzeError] = useState("");
+
+  // ── Step 2 state ─────────────────────────────────────────────────────────────
   const [result,       setResult]       = useState(null);
   const [thumbnails,   setThumbnails]   = useState({});
   const [thumbLoading, setThumbLoading] = useState(false);
   const [frameReviews, setFrameReviews] = useState({});
 
-  // ── Step 3 state ────────────────────────────────────────────────────────────
+  // ── Step 3 state ─────────────────────────────────────────────────────────────
   const [studentName,   setStudentName]   = useState("");
   const [finalJudgment, setFinalJudgment] = useState("");
   const [teacherNote,   setTeacherNote]   = useState("");
@@ -157,7 +184,10 @@ export default function NewScan() {
   const [saveError,     setSaveError]     = useState("");
   const [savedId,       setSavedId]       = useState(null);
 
-  // ── Auto-fetch pages when URL looks valid ────────────────────────────────────
+  // Revoke blob URL when component unmounts
+  useEffect(() => () => { if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current); }, []);
+
+  // ── Auto-fetch Figma pages when URL looks valid ───────────────────────────────
   useEffect(() => {
     if (!FIGMA_URL_RE.test(figmaUrl)) {
       setPages([]); setSelectedPageId(""); setPagesError(""); return;
@@ -182,9 +212,64 @@ export default function NewScan() {
     return () => clearTimeout(timer);
   }, [figmaUrl]);
 
-  // ── Step 1 → Step 2: run analysis ───────────────────────────────────────────
-  const handleAnalyze = async () => {
-    if (!figmaUrl.trim() || !selectedPageId) return;
+  // ── Upload: process a chosen File ────────────────────────────────────────────
+  const processFile = (f) => {
+    setAnalyzeError("");
+    if (!ALLOWED_MIME.includes(f.type)) {
+      setAnalyzeError("仅支持 PDF、PNG、JPG、WEBP 格式");
+      return;
+    }
+    if (f.size > MAX_UPLOAD_BYTES) {
+      setAnalyzeError(`文件超过 8 MB，请压缩后重试（当前 ${(f.size / 1024 / 1024).toFixed(1)} MB）`);
+      return;
+    }
+    // Revoke previous blob URL
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
+    setUploadFile(f);
+    if (f.type !== "application/pdf") {
+      const url = URL.createObjectURL(f);
+      blobUrlRef.current = url;
+      setUploadPreviewUrl(url);
+    } else {
+      setUploadPreviewUrl(null);
+    }
+  };
+
+  const clearUpload = () => {
+    setUploadFile(null);
+    if (blobUrlRef.current) { URL.revokeObjectURL(blobUrlRef.current); blobUrlRef.current = null; }
+    setUploadPreviewUrl(null);
+    setAnalyzeError("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleFileInputChange = (e) => {
+    const f = e.target.files?.[0];
+    if (f) processFile(f);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f) processFile(f);
+  };
+
+  // ── After analysis: shared setup ─────────────────────────────────────────────
+  const applyResult = (data) => {
+    setResult(data);
+    setFrameReviews({});
+    setStudentName(data.studentName || "");
+    setFinalJudgment(data.overallScore >= 70 ? "ai" : data.overallScore < 40 ? "original" : "");
+    setStep(2);
+  };
+
+  // ── Step 1 → Step 2: Figma analysis ──────────────────────────────────────────
+  const handleAnalyzeFigma = async () => {
+    if (!figmaUrl.trim() || !selectedPageId || analyzing) return;
     setAnalyzing(true); setAnalyzeError("");
     try {
       const res  = await fetch("/api/analyze-figma", {
@@ -194,14 +279,10 @@ export default function NewScan() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "分析失败");
 
-      setResult(data);
-      setFrameReviews({});
-      setStudentName(data.studentName || "");
-      // Pre-select final judgment based on AI score
-      setFinalJudgment(data.overallScore >= 70 ? "ai" : data.overallScore < 40 ? "original" : "");
-      setStep(2);
+      applyResult(data);
+      setThumbnails({});
 
-      // Fetch thumbnails in background (non-blocking)
+      // Fetch Figma frame thumbnails in the background
       const nodeIds = (data.frames || []).map((f) => f.nodeId).filter(Boolean);
       if (nodeIds.length > 0) {
         setThumbLoading(true);
@@ -221,7 +302,28 @@ export default function NewScan() {
     }
   };
 
-  // ── Frame review handler (local state only, saved at Step 3) ─────────────────
+  // ── Step 1 → Step 2: Upload analysis ─────────────────────────────────────────
+  const handleAnalyzeUpload = async () => {
+    if (!uploadFile || analyzing) return;
+    setAnalyzing(true); setAnalyzeError("");
+    try {
+      const body = new FormData();
+      body.append("file", uploadFile);
+      const res  = await fetch("/api/analyze-upload", { method: "POST", body });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "分析失败");
+
+      applyResult(data);
+      setThumbnails({});
+      setThumbLoading(false);
+    } catch (err) {
+      setAnalyzeError(err.message);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  // ── Frame review handler (local state only, saved at Step 3) ──────────────────
   const handleFrameReview = (frameName, action, note) => {
     setFrameReviews((prev) => {
       if (action === null) {
@@ -231,17 +333,19 @@ export default function NewScan() {
     });
   };
 
-  // ── Step 3: save to DB ───────────────────────────────────────────────────────
+  // ── Step 3: save to DB ────────────────────────────────────────────────────────
   const handleSave = async () => {
     if (!finalJudgment) return;
     setSaving(true); setSaveError("");
     try {
+      const isUpload   = result?.sourceType === "upload";
       const selectedPage = pages.find((p) => p.id === selectedPageId);
       const res = await fetch("/api/save-scan", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          figmaUrl,
-          pageName:      selectedPage?.name || "",
+          figmaUrl:     isUpload ? null : figmaUrl,
+          fileName:     isUpload ? (uploadFile?.name || result.fileName) : null,
+          pageName:     isUpload ? (result.fileName || "") : (selectedPage?.name || ""),
           result,
           studentName,
           frameReviews,
@@ -259,22 +363,37 @@ export default function NewScan() {
     }
   };
 
-  // ── Reset everything ─────────────────────────────────────────────────────────
+  // ── Reset everything ──────────────────────────────────────────────────────────
   const handleReset = () => {
     setStep(1); setResult(null); setThumbnails({}); setFrameReviews({});
     setStudentName(""); setFinalJudgment(""); setTeacherNote("");
     setSavedId(null); setSaveError(""); setAnalyzeError("");
     setFigmaUrl(""); setPages([]); setSelectedPageId("");
+    setInputMode("figma");
+    clearUpload();
   };
 
-  const canAnalyze  = figmaUrl.trim() && selectedPageId && !analyzing && !pagesLoading;
-  const frames      = result?.frames || [];
-  const reviewCount = Object.keys(frameReviews).length;
-  const resultColor = result
+  // ── Derived ───────────────────────────────────────────────────────────────────
+  const canAnalyzeFigma = figmaUrl.trim() && selectedPageId && !analyzing && !pagesLoading;
+  const frames          = result?.frames || [];
+  const reviewCount     = Object.keys(frameReviews).length;
+  const resultColor     = result
     ? result.overallScore >= 70 ? "#ef4444" : result.overallScore >= 40 ? "#f59e0b" : "#22c55e"
     : "#94a3b8";
+  const isUpload        = result?.sourceType === "upload";
 
-  // ═══════════════════════════════════════════════════════════════════════════
+  // For uploaded images, use the blob URL as the thumbnail for every frame card
+  const getThumbnail = (frame) => {
+    if (isUpload) return uploadPreviewUrl || null;
+    return thumbnails[frame.nodeId] ?? null;
+  };
+
+  // Source label shown in Step 2/3 (page name for Figma, filename for upload)
+  const sourceLabel = isUpload
+    ? (result?.fileName || "上传文件")
+    : (pages.find((p) => p.id === selectedPageId)?.name || "");
+
+  // ═══════════════════════════════════════════════════════════════════════════════
   return (
     <div style={{ padding: "28px 28px 64px" }}>
       {/* Page header */}
@@ -285,70 +404,216 @@ export default function NewScan() {
         </p>
       </div>
 
-      {/* Step indicator (hide on success screen) */}
+      {/* Step indicator */}
       {!savedId && <StepIndicator current={step} />}
 
-      {/* ════════ STEP 1: URL input ════════════════════════════════════════════ */}
+      {/* ════════ STEP 1 ════════════════════════════════════════════════════════ */}
       {step === 1 && (
         <div style={{ maxWidth: 560 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 10 }}>通过链接检测</div>
 
-          <input type="url" value={figmaUrl} onChange={(e) => setFigmaUrl(e.target.value)}
-            placeholder="粘贴 Figma 分享链接，例如：https://www.figma.com/file/..."
-            style={{
-              width: "100%", padding: "10px 14px", borderRadius: 9,
-              border: "1px solid #e2e8f0", fontSize: 13, color: "#0f172a",
-              background: "#fff", outline: "none", fontFamily: "inherit", boxSizing: "border-box", marginBottom: 8,
-            }}
-            onFocus={(e) => (e.target.style.borderColor = "#93c5fd")}
-            onBlur={(e)  => (e.target.style.borderColor = "#e2e8f0")} />
-
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            {/* Page dropdown */}
-            <div style={{ flex: 1, position: "relative" }}>
-              {pagesLoading ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 9, border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: 13, color: "#94a3b8" }}>
-                  <Spinner color="#94a3b8" /> 正在读取页面…
-                </div>
-              ) : pages.length > 0 ? (
-                <select value={selectedPageId} onChange={(e) => setSelectedPageId(e.target.value)}
+          {/* Mode toggle */}
+          <div style={{
+            display: "flex", marginBottom: 20,
+            border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden",
+          }}>
+            {[
+              { key: "figma",  label: "🔗  Figma 链接" },
+              { key: "upload", label: "📁  上传文件" },
+            ].map((m) => {
+              const active = inputMode === m.key;
+              return (
+                <button key={m.key}
+                  onClick={() => { setInputMode(m.key); setAnalyzeError(""); }}
                   style={{
-                    width: "100%", padding: "10px 14px", borderRadius: 9, border: "1px solid #e2e8f0",
-                    fontSize: 13, color: "#0f172a", background: "#fff", fontFamily: "inherit",
-                    outline: "none", cursor: "pointer", appearance: "none",
-                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`,
-                    backgroundRepeat: "no-repeat", backgroundPosition: "right 12px center", paddingRight: 36,
-                  }}
-                  onFocus={(e) => (e.target.style.borderColor = "#93c5fd")}
-                  onBlur={(e)  => (e.target.style.borderColor = "#e2e8f0")}
-                >
-                  {pages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              ) : (
-                <div style={{ padding: "10px 14px", borderRadius: 9, border: "1px dashed #e2e8f0", background: "#f8fafc", fontSize: 13, color: "#cbd5e1" }}>
-                  粘贴链接后自动显示页面列表
-                </div>
-              )}
-            </div>
-
-            <button onClick={handleAnalyze} disabled={!canAnalyze} style={{
-              padding: "10px 18px", borderRadius: 9, border: "none",
-              background: canAnalyze ? "#2563eb" : "#dbeafe",
-              color: canAnalyze ? "#fff" : "#93c5fd",
-              fontSize: 13, fontWeight: 600, cursor: canAnalyze ? "pointer" : "default",
-              display: "flex", alignItems: "center", gap: 6, flexShrink: 0, whiteSpace: "nowrap", transition: "all .15s",
-            }}>
-              {analyzing ? <><Spinner color="#fff" /> 分析中…</> : "开始检测 →"}
-            </button>
+                    flex: 1, padding: "10px 0", border: "none", cursor: "pointer",
+                    fontSize: 13, fontWeight: active ? 700 : 400,
+                    background: active ? "#2563eb" : "#fff",
+                    color: active ? "#fff" : "#64748b",
+                    transition: "all .18s",
+                  }}>
+                  {m.label}
+                </button>
+              );
+            })}
           </div>
 
-          {pagesError && (
-            <div style={{ marginTop: 8, padding: "7px 12px", borderRadius: 8, background: "#fef2f2", border: "1px solid #fecaca", fontSize: 12, color: "#dc2626" }}>
-              ⚠ {pagesError}
-            </div>
+          {/* ─── Figma URL mode ─────────────────────────────────────── */}
+          {inputMode === "figma" && (
+            <>
+              <input type="url" value={figmaUrl} onChange={(e) => setFigmaUrl(e.target.value)}
+                placeholder="粘贴 Figma 分享链接，例如：https://www.figma.com/file/..."
+                style={{
+                  width: "100%", padding: "10px 14px", borderRadius: 9,
+                  border: "1px solid #e2e8f0", fontSize: 13, color: "#0f172a",
+                  background: "#fff", outline: "none", fontFamily: "inherit",
+                  boxSizing: "border-box", marginBottom: 8,
+                }}
+                onFocus={(e) => (e.target.style.borderColor = "#93c5fd")}
+                onBlur={(e)  => (e.target.style.borderColor = "#e2e8f0")} />
+
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                {/* Page dropdown */}
+                <div style={{ flex: 1 }}>
+                  {pagesLoading ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 9, border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: 13, color: "#94a3b8" }}>
+                      <Spinner color="#94a3b8" /> 正在读取页面…
+                    </div>
+                  ) : pages.length > 0 ? (
+                    <select value={selectedPageId} onChange={(e) => setSelectedPageId(e.target.value)}
+                      style={{
+                        width: "100%", padding: "10px 14px", borderRadius: 9, border: "1px solid #e2e8f0",
+                        fontSize: 13, color: "#0f172a", background: "#fff", fontFamily: "inherit",
+                        outline: "none", cursor: "pointer", appearance: "none",
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`,
+                        backgroundRepeat: "no-repeat", backgroundPosition: "right 12px center", paddingRight: 36,
+                      }}
+                      onFocus={(e) => (e.target.style.borderColor = "#93c5fd")}
+                      onBlur={(e)  => (e.target.style.borderColor = "#e2e8f0")}
+                    >
+                      {pages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  ) : (
+                    <div style={{ padding: "10px 14px", borderRadius: 9, border: "1px dashed #e2e8f0", background: "#f8fafc", fontSize: 13, color: "#cbd5e1" }}>
+                      粘贴链接后自动显示页面列表
+                    </div>
+                  )}
+                </div>
+
+                <button onClick={handleAnalyzeFigma} disabled={!canAnalyzeFigma} style={{
+                  padding: "10px 18px", borderRadius: 9, border: "none",
+                  background: canAnalyzeFigma ? "#2563eb" : "#dbeafe",
+                  color: canAnalyzeFigma ? "#fff" : "#93c5fd",
+                  fontSize: 13, fontWeight: 600,
+                  cursor: canAnalyzeFigma ? "pointer" : "default",
+                  display: "flex", alignItems: "center", gap: 6,
+                  flexShrink: 0, whiteSpace: "nowrap", transition: "all .15s",
+                }}>
+                  {analyzing ? <><Spinner color="#fff" /> 分析中…</> : "开始检测 →"}
+                </button>
+              </div>
+
+              {pagesError && (
+                <div style={{ marginTop: 8, padding: "7px 12px", borderRadius: 8, background: "#fef2f2", border: "1px solid #fecaca", fontSize: 12, color: "#dc2626" }}>
+                  ⚠ {pagesError}
+                </div>
+              )}
+            </>
           )}
+
+          {/* ─── Upload mode ──────────────────────────────────────────── */}
+          {inputMode === "upload" && (
+            <>
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.webp"
+                onChange={handleFileInputChange}
+                style={{ display: "none" }}
+              />
+
+              {/* Drop zone */}
+              <div
+                onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                onDragLeave={() => setIsDragOver(false)}
+                onDrop={handleDrop}
+                onClick={uploadFile ? undefined : () => fileInputRef.current?.click()}
+                style={{
+                  border: `2px dashed ${isDragOver ? "#2563eb" : uploadFile ? "#22c55e" : "#e2e8f0"}`,
+                  borderRadius: 14,
+                  padding: uploadFile ? "20px" : "36px 20px",
+                  textAlign: "center",
+                  cursor: uploadFile ? "default" : "pointer",
+                  background: isDragOver ? "#eff6ff" : uploadFile ? "#f0fdf4" : "#f8fafc",
+                  transition: "all .2s",
+                  marginBottom: 12,
+                }}>
+                {uploadFile ? (
+                  /* File selected state */
+                  <div>
+                    {/* Image preview */}
+                    {uploadPreviewUrl && (
+                      <img
+                        src={uploadPreviewUrl}
+                        alt="preview"
+                        style={{
+                          maxHeight: 160, maxWidth: "100%",
+                          borderRadius: 8, marginBottom: 12,
+                          objectFit: "contain", display: "block", margin: "0 auto 12px",
+                        }}
+                      />
+                    )}
+                    {/* PDF icon */}
+                    {!uploadPreviewUrl && (
+                      <div style={{ marginBottom: 8 }}><IconPDF /></div>
+                    )}
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", marginBottom: 3 }}>
+                      {uploadFile.name}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+                      {(uploadFile.size / 1024 / 1024).toFixed(2)} MB
+                      &nbsp;·&nbsp;
+                      {uploadFile.type === "application/pdf" ? "PDF 文档" :
+                       uploadFile.type === "image/png" ? "PNG 图片" :
+                       uploadFile.type === "image/jpeg" ? "JPEG 图片" : "WEBP 图片"}
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); clearUpload(); }}
+                      style={{
+                        padding: "4px 14px", borderRadius: 6,
+                        border: "1px solid #fecaca", background: "#fef2f2",
+                        color: "#dc2626", fontSize: 12, cursor: "pointer",
+                      }}>
+                      移除文件
+                    </button>
+                  </div>
+                ) : (
+                  /* Empty state */
+                  <div>
+                    <div style={{ fontSize: 36, marginBottom: 10 }}>
+                      {isDragOver ? "📂" : "☁️"}
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: "#374151", marginBottom: 6 }}>
+                      {isDragOver ? "松开以上传" : "拖拽文件到此处，或点击选择"}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#94a3b8" }}>
+                      支持 PDF、PNG、JPG、WEBP · 最大 8 MB
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Analyze button */}
+              <button
+                onClick={handleAnalyzeUpload}
+                disabled={!uploadFile || analyzing}
+                style={{
+                  width: "100%", padding: "10px 18px", borderRadius: 9, border: "none",
+                  background: uploadFile && !analyzing ? "#2563eb" : "#dbeafe",
+                  color: uploadFile && !analyzing ? "#fff" : "#93c5fd",
+                  fontSize: 13, fontWeight: 600,
+                  cursor: uploadFile && !analyzing ? "pointer" : "default",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  gap: 6, transition: "all .15s",
+                }}>
+                {analyzing ? <><Spinner color="#fff" /> 分析中…</> : "开始检测 →"}
+              </button>
+
+              {/* Supported format badges */}
+              <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+                {["PDF", "PNG", "JPG", "WEBP"].map((fmt) => (
+                  <span key={fmt} style={{
+                    padding: "2px 10px", borderRadius: 20, border: "1px solid #e2e8f0",
+                    fontSize: 11, color: "#94a3b8", background: "#f8fafc",
+                  }}>{fmt}</span>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Shared error + skeleton */}
           {analyzeError && (
-            <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 8, background: "#fef2f2", border: "1px solid #fecaca", fontSize: 13, color: "#dc2626" }}>
+            <div style={{ marginTop: 12, padding: "8px 12px", borderRadius: 8, background: "#fef2f2", border: "1px solid #fecaca", fontSize: 13, color: "#dc2626" }}>
               ⚠ {analyzeError}
             </div>
           )}
@@ -369,7 +634,8 @@ export default function NewScan() {
         <div>
           {/* Top bar */}
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
-            <button onClick={() => { setStep(1); setResult(null); setThumbnails({}); setFrameReviews({}); }}
+            <button
+              onClick={() => { setStep(1); setResult(null); setThumbnails({}); setFrameReviews({}); }}
               style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
               ← 重新输入
             </button>
@@ -394,7 +660,7 @@ export default function NewScan() {
             </div>
 
             <button onClick={() => setStep(3)}
-              style={{ padding: "7px 18px", borderRadius: 8, border: "none", background: "#2563eb", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+              style={{ padding: "7px 18px", borderRadius: 8, border: "none", background: "#2563eb", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
               下一步 →
             </button>
           </div>
@@ -407,10 +673,16 @@ export default function NewScan() {
           }}>
             <ScoreRing score={result.overallScore} size={74} />
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 11, color: "#94a3b8", letterSpacing: .5, marginBottom: 3 }}>
-                综合检测结果 · {pages.find((p) => p.id === selectedPageId)?.name}
+              <div style={{ fontSize: 11, color: "#94a3b8", letterSpacing: .5, marginBottom: 3, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+                <span>综合检测结果</span>
+                {sourceLabel && <span style={{ color: "#cbd5e1" }}>·</span>}
+                {sourceLabel && (
+                  <span style={{ padding: "1px 7px", borderRadius: 20, background: "#f1f5f9", color: "#64748b", fontSize: 10 }}>
+                    {isUpload ? "📁" : "🔗"} {sourceLabel}
+                  </span>
+                )}
                 {result.studentName && (
-                  <span style={{ marginLeft: 8, padding: "1px 7px", borderRadius: 20, background: "#e0f2fe", color: "#0284c7", fontWeight: 600 }}>
+                  <span style={{ padding: "1px 7px", borderRadius: 20, background: "#e0f2fe", color: "#0284c7", fontWeight: 600, fontSize: 10 }}>
                     👤 {result.studentName}
                     {result.studentNameSource && ` · ${NAME_SOURCE_LABEL[result.studentNameSource] || ""}`}
                   </span>
@@ -424,15 +696,15 @@ export default function NewScan() {
           {/* Frame cards */}
           {frames.length === 0 ? (
             <div style={{ fontSize: 13, color: "#94a3b8", textAlign: "center", padding: "32px 0" }}>
-              没有可审阅的 Frame
+              没有可审阅的区域
             </div>
           ) : (
             frames.map((frame) => (
               <FrameReviewCard
                 key={frame.name}
                 frame={frame}
-                thumbnail={thumbnails[frame.nodeId] ?? null}
-                thumbLoading={thumbLoading}
+                thumbnail={getThumbnail(frame)}
+                thumbLoading={isUpload ? false : thumbLoading}
                 review={frameReviews[frame.name] ?? null}
                 onReview={(action, note) => handleFrameReview(frame.name, action, note)}
               />
@@ -457,27 +729,33 @@ export default function NewScan() {
             ← 返回审阅
           </button>
 
-          {/* ── Summary card ── */}
+          {/* Summary card */}
           <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "18px 20px", marginBottom: 16, display: "flex", alignItems: "center", gap: 20 }}>
             <ScoreRing score={result.overallScore} size={72} />
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 16, fontWeight: 700, color: resultColor, marginBottom: 4 }}>{result.label}</div>
-              <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>
-                {pages.find((p) => p.id === selectedPageId)?.name}
-                {" · "}已审阅 {reviewCount}/{frames.length} 帧
-                {reviewCount > 0 && ` · ${Object.values(frameReviews).filter((r) => r.action === "confirm").length} 帧确认AI`}
+              <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {sourceLabel && (
+                  <span style={{ padding: "1px 7px", borderRadius: 20, background: "#f1f5f9", color: "#64748b", fontSize: 11 }}>
+                    {isUpload ? "📁" : "🔗"} {sourceLabel}
+                  </span>
+                )}
+                <span>已审阅 {reviewCount}/{frames.length} 帧</span>
+                {reviewCount > 0 && (
+                  <span>· {Object.values(frameReviews).filter((r) => r.action === "confirm").length} 帧确认AI</span>
+                )}
               </div>
               <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.6 }}>{result.summary}</div>
             </div>
           </div>
 
-          {/* ── Student name ── */}
+          {/* Student name */}
           <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 18px", marginBottom: 16 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 8 }}>👤 学生姓名</div>
-            {result.studentName && !studentName.trim() && (
+            {result.studentName && result.studentNameSource && (
               <div style={{ fontSize: 11, color: "#0284c7", marginBottom: 7 }}>
                 <span style={{ padding: "2px 8px", borderRadius: 20, background: "#e0f2fe", fontWeight: 600 }}>
-                  ✨ 自动识别 · {NAME_SOURCE_LABEL[result.studentNameSource] || result.studentNameSource || ""}
+                  ✨ 自动识别 · {NAME_SOURCE_LABEL[result.studentNameSource] || result.studentNameSource}
                 </span>
               </div>
             )}
@@ -495,7 +773,7 @@ export default function NewScan() {
             />
           </div>
 
-          {/* ── Frame review summary (compact) ── */}
+          {/* Frame review summary (compact chips) */}
           {frames.length > 0 && (
             <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 18px", marginBottom: 16 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 10 }}>📋 审阅汇总</div>
@@ -524,9 +802,11 @@ export default function NewScan() {
             </div>
           )}
 
-          {/* ── Final judgment ── */}
+          {/* Final judgment */}
           <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 18px", marginBottom: 16 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 12 }}>⚖️ 最终判断 <span style={{ color: "#ef4444" }}>*</span></div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 12 }}>
+              ⚖️ 最终判断 <span style={{ color: "#ef4444" }}>*</span>
+            </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {JUDGMENT_OPTIONS.map((opt) => {
                 const selected = finalJudgment === opt.value;
@@ -553,7 +833,7 @@ export default function NewScan() {
             </div>
           </div>
 
-          {/* ── Teacher note ── */}
+          {/* Teacher note */}
           <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 18px", marginBottom: 20 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 8 }}>
               💬 给学生的备注 <span style={{ color: "#94a3b8", fontWeight: 400 }}>（可选）</span>
@@ -574,7 +854,7 @@ export default function NewScan() {
             />
           </div>
 
-          {/* ── Save button ── */}
+          {/* Save button */}
           {saveError && (
             <div style={{ padding: "8px 14px", borderRadius: 8, background: "#fef2f2", border: "1px solid #fecaca", fontSize: 13, color: "#dc2626", marginBottom: 12 }}>
               ⚠ {saveError}
@@ -587,11 +867,11 @@ export default function NewScan() {
               width: "100%", padding: "13px", borderRadius: 10, border: "none",
               background: finalJudgment && !saving ? "#2563eb" : "#dbeafe",
               color: finalJudgment && !saving ? "#fff" : "#93c5fd",
-              fontSize: 15, fontWeight: 700, cursor: finalJudgment && !saving ? "pointer" : "default",
+              fontSize: 15, fontWeight: 700,
+              cursor: finalJudgment && !saving ? "pointer" : "default",
               display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
               transition: "all .15s",
-            }}
-          >
+            }}>
             {saving ? <><Spinner color="#fff" /> 保存中…</> : "确认保存 →"}
           </button>
           {!finalJudgment && (
@@ -602,7 +882,7 @@ export default function NewScan() {
         </div>
       )}
 
-      {/* ════════ SUCCESS screen ══════════════════════════════════════════════ */}
+      {/* ════════ SUCCESS screen ═══════════════════════════════════════════════ */}
       {savedId && (
         <div style={{ maxWidth: 480, margin: "0 auto", textAlign: "center", padding: "40px 0" }}>
           <div style={{ fontSize: 56, marginBottom: 16 }}>✅</div>
@@ -621,12 +901,14 @@ export default function NewScan() {
             <span style={{ padding: "5px 14px", borderRadius: 20, background: resultColor + "18", color: resultColor, fontSize: 13, fontWeight: 600 }}>
               {result?.overallScore}% · {result?.label}
             </span>
-            {finalJudgment && (
-              <span style={{ padding: "5px 14px", borderRadius: 20, background: JUDGMENT_OPTIONS.find((o) => o.value === finalJudgment)?.bg, color: JUDGMENT_OPTIONS.find((o) => o.value === finalJudgment)?.color, fontSize: 13, fontWeight: 600, border: `1px solid ${JUDGMENT_OPTIONS.find((o) => o.value === finalJudgment)?.border}` }}>
-                {JUDGMENT_OPTIONS.find((o) => o.value === finalJudgment)?.icon}{" "}
-                {JUDGMENT_OPTIONS.find((o) => o.value === finalJudgment)?.label}
-              </span>
-            )}
+            {finalJudgment && (() => {
+              const opt = JUDGMENT_OPTIONS.find((o) => o.value === finalJudgment);
+              return opt ? (
+                <span style={{ padding: "5px 14px", borderRadius: 20, background: opt.bg, color: opt.color, fontSize: 13, fontWeight: 600, border: `1px solid ${opt.border}` }}>
+                  {opt.icon} {opt.label}
+                </span>
+              ) : null;
+            })()}
           </div>
 
           <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
