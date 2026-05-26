@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { supabase } from "../lib/supabase";
 import { FrameReviewCard } from "../components/FrameReviewCard";
@@ -35,14 +35,17 @@ function ScoreRing({ score, size = 60 }) {
 
 // ─── ResultCard ────────────────────────────────────────────────────────────────
 function ResultCard({ scan: initialScan }) {
-  const [expanded, setExpanded] = useState(false);
-  const [studentName, setStudentName] = useState(initialScan.student_name || "");
-  const [nameDirty, setNameDirty] = useState(false);
-  const [nameSaving, setNameSaving] = useState(false);
-  const [nameSaved, setNameSaved] = useState(false);
-  const [thumbnails, setThumbnails] = useState({});
+  const [expanded,     setExpanded]     = useState(false);
+  const [studentName,  setStudentName]  = useState(initialScan.student_name || "");
+  const [nameEditing,  setNameEditing]  = useState(false);
+  const [nameDirty,    setNameDirty]    = useState(false);
+  const [nameSaving,   setNameSaving]   = useState(false);
+  const [nameSaved,    setNameSaved]    = useState(false);
+  const [thumbnails,   setThumbnails]   = useState({});
   const [thumbLoading, setThumbLoading] = useState(false);
-  const [reviews, setReviews] = useState(initialScan.teacher_reviews || {});
+  const [reviews,      setReviews]      = useState(initialScan.teacher_reviews || {});
+  // Track value at edit-start so Escape can revert
+  const editStartRef = useRef(initialScan.student_name || "");
 
   const score      = initialScan.ai_score;
   const color      = score >= 70 ? "#ef4444" : score >= 40 ? "#f59e0b" : "#22c55e";
@@ -70,13 +73,24 @@ function ResultCard({ scan: initialScan }) {
       .finally(() => setThumbLoading(false));
   }, [expanded]);
 
-  const saveName = async () => {
+  const saveName = async (nameToSave = studentName) => {
     setNameSaving(true);
-    await supabase.from("scans").update({ student_name: studentName }).eq("id", initialScan.id);
+    await supabase.from("scans").update({ student_name: nameToSave }).eq("id", initialScan.id);
     setNameSaving(false);
     setNameDirty(false);
     setNameSaved(true);
     setTimeout(() => setNameSaved(false), 2500);
+  };
+
+  const commitNameEdit = () => {
+    setNameEditing(false);
+    if (nameDirty) saveName();
+  };
+
+  const cancelNameEdit = () => {
+    setStudentName(editStartRef.current);
+    setNameDirty(false);
+    setNameEditing(false);
   };
 
   const handleReview = async (frameName, action, note) => {
@@ -99,17 +113,78 @@ function ResultCard({ scan: initialScan }) {
       borderRadius: 12, marginBottom: 10, overflow: "hidden", transition: "all .2s",
     }}>
       {/* Collapsed header */}
-      <div onClick={() => setExpanded(!expanded)}
-        style={{ padding: "14px 20px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
+      <div onClick={() => !nameEditing && setExpanded(!expanded)}
+        style={{ padding: "14px 20px", cursor: nameEditing ? "default" : "pointer", display: "flex", alignItems: "center", gap: 12 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
+
+          {/* Row 1: name + badges */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 15, fontWeight: 700, color: studentName ? "#0f172a" : "#cbd5e1" }}>
-              {studentName || "未填写学生姓名"}
-            </span>
+
+            {/* Inline-editable name */}
+            {nameEditing ? (
+              <input
+                autoFocus
+                value={studentName}
+                onChange={(e) => { setStudentName(e.target.value); setNameDirty(true); setNameSaved(false); }}
+                onBlur={commitNameEdit}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === "Enter")  commitNameEdit();
+                  if (e.key === "Escape") cancelNameEdit();
+                }}
+                onClick={(e) => e.stopPropagation()}
+                placeholder="填写学生姓名…"
+                style={{
+                  fontSize: 15, fontWeight: 700, color: "#0f172a",
+                  border: "1px solid #93c5fd", borderRadius: 6,
+                  padding: "2px 8px", outline: "none", background: "#fff",
+                  fontFamily: "inherit", minWidth: 120,
+                }}
+              />
+            ) : (
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  editStartRef.current = studentName;
+                  setNameEditing(true);
+                  setNameDirty(false);
+                }}
+                title="点击编辑姓名"
+                style={{
+                  fontSize: 15, fontWeight: 700,
+                  color: studentName ? "#0f172a" : "#cbd5e1",
+                  cursor: "text",
+                  borderBottom: "1px dashed transparent",
+                }}
+                onMouseEnter={(e) => (e.target.style.borderBottomColor = "#cbd5e1")}
+                onMouseLeave={(e) => (e.target.style.borderBottomColor = "transparent")}
+              >
+                {studentName || "未填写学生姓名"}
+              </span>
+            )}
+
+            {/* Saved confirmation */}
+            {nameSaved && !nameEditing && (
+              <span style={{ fontSize: 11, color: "#16a34a", flexShrink: 0 }}>✓ 已保存</span>
+            )}
+
+            {/* Auto-detect source badge */}
+            {nameSource && studentName && !nameEditing && (
+              <span style={{
+                fontSize: 9, padding: "1px 7px", borderRadius: 20, flexShrink: 0,
+                background: "#e0f2fe", color: "#0284c7", fontWeight: 700, letterSpacing: .2,
+              }}>
+                ✨ {NAME_SOURCE_LABEL[nameSource] || nameSource}
+              </span>
+            )}
+
+            {/* AI score badge */}
             <span style={{
               fontSize: 10, padding: "2px 8px", borderRadius: 20, flexShrink: 0,
               background: color + "18", color, fontWeight: 700, letterSpacing: .4,
             }}>{badge}</span>
+
+            {/* Review progress badge */}
             {reviewedCount > 0 && (
               <span style={{
                 fontSize: 10, padding: "2px 8px", borderRadius: 20, flexShrink: 0,
@@ -120,10 +195,29 @@ function ResultCard({ scan: initialScan }) {
               </span>
             )}
           </div>
-          <div style={{ fontSize: 12, color: "#94a3b8" }}>
-            {[initialScan.page_name, dateStr].filter(Boolean).join(" · ")}
+
+          {/* Row 2: page name · date · Figma link */}
+          <div style={{ fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <span>{[initialScan.page_name, dateStr].filter(Boolean).join(" · ")}</span>
+            {!isUploadScan && initialScan.figma_url && (
+              <>
+                <span>·</span>
+                <a
+                  href={initialScan.figma_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ color: "#2563eb", textDecoration: "none", fontWeight: 500, display: "flex", alignItems: "center", gap: 3 }}
+                  onMouseEnter={(e) => (e.currentTarget.style.textDecoration = "underline")}
+                  onMouseLeave={(e) => (e.currentTarget.style.textDecoration = "none")}
+                >
+                  🔗 查看文件
+                </a>
+              </>
+            )}
           </div>
         </div>
+
         <ScoreRing score={score} size={56} />
         <span style={{ color: "#94a3b8", fontSize: 12, transform: expanded ? "rotate(180deg)" : "none", transition: "transform .2s", flexShrink: 0 }}>▾</span>
       </div>
@@ -131,39 +225,6 @@ function ResultCard({ scan: initialScan }) {
       {/* Expanded body */}
       {expanded && (
         <div style={{ borderTop: "1px solid #e2e8f0", padding: "16px 20px 20px" }}>
-
-          {/* Student name editor */}
-          <div style={{ marginBottom: 16, padding: "10px 12px", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 9 }}>
-            {nameSource && !nameDirty && studentName && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7, fontSize: 11, color: "#0284c7" }}>
-                <span style={{ padding: "2px 8px", borderRadius: 20, background: "#e0f2fe", fontWeight: 600 }}>
-                  ✨ 自动识别 · {NAME_SOURCE_LABEL[nameSource] || nameSource}
-                </span>
-                <span style={{ color: "#94a3b8" }}>点击下方输入框可修改</span>
-              </div>
-            )}
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 12, color: "#64748b", fontWeight: 600, flexShrink: 0 }}>👤 学生姓名</span>
-              <input value={studentName}
-                onChange={(e) => { setStudentName(e.target.value); setNameDirty(true); setNameSaved(false); }}
-                onKeyDown={(e) => e.key === "Enter" && nameDirty && saveName()}
-                placeholder="填写学生姓名…"
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  flex: 1, padding: "5px 8px", borderRadius: 6,
-                  border: nameDirty ? "1px solid #93c5fd" : "1px solid transparent",
-                  background: nameDirty ? "#ffffff" : "transparent",
-                  fontSize: 13, color: "#0f172a", fontFamily: "inherit", outline: "none", transition: "all .15s",
-                }} />
-              {nameSaved && <span style={{ fontSize: 12, color: "#16a34a", flexShrink: 0 }}>✓ 已保存</span>}
-              {nameDirty && (
-                <button onClick={(e) => { e.stopPropagation(); saveName(); }} disabled={nameSaving}
-                  style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: "#2563eb", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>
-                  {nameSaving ? "保存中…" : "保存"}
-                </button>
-              )}
-            </div>
-          </div>
 
           {/* AI summary */}
           {initialScan.analysis?.summary && (
