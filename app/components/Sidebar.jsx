@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import Logo from "./Logo";
 
 const NAV_ITEMS = [
   { href: "/",            label: "Dashboard",   icon: "📊" },
@@ -43,15 +44,8 @@ export default function Sidebar() {
           minHeight: 64,
         }}
       >
-        <div
-          style={{
-            width: 34, height: 34, borderRadius: 9, flexShrink: 0,
-            background: "linear-gradient(135deg, #3b82f6, #6366f1)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 17,
-          }}
-        >
-          🔬
+        <div style={{ flexShrink: 0 }}>
+          <Logo size={34} />
         </div>
         <div
           style={{
@@ -61,8 +55,8 @@ export default function Sidebar() {
             whiteSpace: "nowrap",
           }}
         >
-          <div style={{ fontSize: 13, fontWeight: 800, color: "#0f172a", letterSpacing: -0.3 }}>
-            Figma AI 检测器
+          <div style={{ fontSize: 14, fontWeight: 800, color: "#0f172a", letterSpacing: -0.4 }}>
+            ProofMade
           </div>
           <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 1, letterSpacing: 0.5 }}>
             第一期上线

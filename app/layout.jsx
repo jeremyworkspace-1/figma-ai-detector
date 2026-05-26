@@ -1,9 +1,10 @@
 import { ClerkProvider, SignInButton, SignUpButton, Show, UserButton } from "@clerk/nextjs";
 import Sidebar from "./components/Sidebar";
+import Logo from "./components/Logo";
 import { AppProvider } from "./context/AppContext";
 
 export const metadata = {
-  title: "Figma AI 检测器",
+  title: "ProofMade",
   description: "检测 Figma 原型是否由 AI 生成",
 };
 
@@ -20,15 +21,23 @@ export default function RootLayout({ children }) {
                 <header
                   style={{
                     display: "flex",
-                    justifyContent: "flex-end",
+                    justifyContent: "space-between",
                     alignItems: "center",
                     padding: "10px 20px",
                     background: "#ffffff",
                     borderBottom: "1px solid #e2e8f0",
                     flexShrink: 0,
-                    gap: 8,
                   }}
                 >
+                  {/* Brand */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                    <Logo size={28} />
+                    <span style={{ fontSize: 15, fontWeight: 800, color: "#0f172a", letterSpacing: -0.4 }}>
+                      ProofMade
+                    </span>
+                  </div>
+                  {/* Auth controls */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <Show when="signed-out">
                     <SignInButton>
                       <button
@@ -56,6 +65,7 @@ export default function RootLayout({ children }) {
                   <Show when="signed-in">
                     <UserButton />
                   </Show>
+                  </div>
                 </header>
 
                 {/* Main content */}
