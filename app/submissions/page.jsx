@@ -229,7 +229,22 @@ function ResultCard({ scan: initialScan }) {
           {/* AI summary */}
           {initialScan.analysis?.summary && (
             <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.7, padding: "10px 14px", background: "#ffffff", borderRadius: 8, border: "1px solid #e2e8f0", marginBottom: 16 }}>
-              <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 700, letterSpacing: .8, marginBottom: 5 }}>🤖 AI 综合评价</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+                <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 700, letterSpacing: .8 }}>🤖 AI 综合评价</span>
+                {isUploadScan && initialScan.analysis.detectionType && initialScan.analysis.detectionType !== "original" && (() => {
+                  const DTYPE = {
+                    ui_ai:    { label: "AI设计稿",   color: "#7c3aed", bg: "#ede9fe" },
+                    image_ai: { label: "AI生成图像", color: "#ea580c", bg: "#fff7ed" },
+                    both:     { label: "双重AI特征", color: "#dc2626", bg: "#fee2e2" },
+                  };
+                  const d = DTYPE[initialScan.analysis.detectionType];
+                  return d ? (
+                    <span style={{ fontSize: 10, padding: "1px 7px", borderRadius: 20, background: d.bg, color: d.color, fontWeight: 700 }}>
+                      🔍 {d.label}
+                    </span>
+                  ) : null;
+                })()}
+              </div>
               {initialScan.analysis.summary}
             </div>
           )}

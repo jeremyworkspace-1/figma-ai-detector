@@ -681,6 +681,19 @@ export default function NewScan() {
                     {isUpload ? "📁" : "🔗"} {sourceLabel}
                   </span>
                 )}
+                {isUpload && result.detectionType && result.detectionType !== "original" && (() => {
+                  const DTYPE = {
+                    ui_ai:    { label: "AI设计稿",   color: "#7c3aed", bg: "#ede9fe" },
+                    image_ai: { label: "AI生成图像", color: "#ea580c", bg: "#fff7ed" },
+                    both:     { label: "双重AI特征", color: "#dc2626", bg: "#fee2e2" },
+                  };
+                  const d = DTYPE[result.detectionType];
+                  return d ? (
+                    <span style={{ padding: "1px 7px", borderRadius: 20, background: d.bg, color: d.color, fontWeight: 700, fontSize: 10, letterSpacing: .2 }}>
+                      🔍 {d.label}
+                    </span>
+                  ) : null;
+                })()}
                 {result.studentName && (
                   <span style={{ padding: "1px 7px", borderRadius: 20, background: "#e0f2fe", color: "#0284c7", fontWeight: 600, fontSize: 10 }}>
                     👤 {result.studentName}
@@ -740,6 +753,19 @@ export default function NewScan() {
                     {isUpload ? "📁" : "🔗"} {sourceLabel}
                   </span>
                 )}
+                {isUpload && result.detectionType && result.detectionType !== "original" && (() => {
+                  const DTYPE = {
+                    ui_ai:    { label: "AI设计稿",   color: "#7c3aed", bg: "#ede9fe" },
+                    image_ai: { label: "AI生成图像", color: "#ea580c", bg: "#fff7ed" },
+                    both:     { label: "双重AI特征", color: "#dc2626", bg: "#fee2e2" },
+                  };
+                  const d = DTYPE[result.detectionType];
+                  return d ? (
+                    <span style={{ padding: "1px 7px", borderRadius: 20, background: d.bg, color: d.color, fontWeight: 700, fontSize: 11 }}>
+                      🔍 {d.label}
+                    </span>
+                  ) : null;
+                })()}
                 <span>已审阅 {reviewCount}/{frames.length} 帧</span>
                 {reviewCount > 0 && (() => {
                   const vals = Object.values(frameReviews);
