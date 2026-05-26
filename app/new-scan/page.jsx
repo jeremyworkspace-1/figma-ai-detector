@@ -331,9 +331,9 @@ export default function NewScan() {
             {/* Student name auto-detection result */}
             {(() => {
               const sourceLabel = {
-                layer:    "图层文字识别",
-                filename: "文件名提取",
-                modifier: "Figma 账号推断",
+                version_history: "版本历史",
+                layer:           "图层文字识别",
+                filename:        "文件名提取",
               };
               return urlResult.studentName ? (
                 <div style={{

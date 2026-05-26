@@ -271,9 +271,9 @@ function FrameReviewCard({ frame, thumbnail, thumbLoading, review, onReview }) {
 
 // ─── Source label map ──────────────────────────────────────────────────────────
 const NAME_SOURCE_LABEL = {
-  layer:    "图层文字识别",
-  filename: "文件名提取",
-  modifier: "Figma账号推断",
+  version_history: "版本历史",
+  layer:           "图层文字识别",
+  filename:        "文件名提取",
 };
 
 // ─── ResultCard ────────────────────────────────────────────────────────────────

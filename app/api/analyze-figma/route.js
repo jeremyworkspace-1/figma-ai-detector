@@ -88,16 +88,21 @@ function extractAnalysisData(figmaData, pageId) {
   };
 }
 
-// ─── 从 Figma lastModifiedBy 字段提取可读名称 ──────────────────────────────────
-function extractLastModifiedByName(lmb) {
-  if (!lmb) return null;
-  if (typeof lmb === "object") return lmb.handle || lmb.name || lmb.email || null;
-  if (typeof lmb === "string") {
-    // Figma user IDs are numeric strings like "123456789"; skip those
-    if (/^\d+$/.test(lmb.trim())) return null;
-    return lmb.trim() || null;
+// ─── 从版本历史中提取编辑次数最多的用户名 ────────────────────────────────────────
+function extractMostFrequentEditor(versions) {
+  const counts = {};
+  for (const v of versions) {
+    const id     = v.user?.id;
+    const handle = v.user?.handle || v.user?.name;
+    if (!id || !handle) continue;
+    if (!counts[id]) counts[id] = { handle, count: 0 };
+    counts[id].count++;
   }
-  return null;
+  let best = null, maxCount = 0;
+  for (const info of Object.values(counts)) {
+    if (info.count > maxCount) { maxCount = info.count; best = info.handle; }
+  }
+  return best; // null if no usable version data
 }
 
 // ─── POST handler ──────────────────────────────────────────────────────────────
@@ -126,10 +131,15 @@ export async function POST(request) {
       return NextResponse.json({ error: "服务端未配置 ANTHROPIC_API_KEY" }, { status: 500 });
     }
 
-    // 3. 获取 Figma 文件数据
-    const figmaRes = await fetch(`https://api.figma.com/v1/files/${fileKey}`, {
-      headers: { "X-Figma-Token": process.env.FIGMA_TOKEN },
-    });
+    // 3. 并行获取 Figma 文件数据 + 版本历史（版本历史是姓名识别最可靠的来源）
+    const [figmaRes, versionsRes] = await Promise.all([
+      fetch(`https://api.figma.com/v1/files/${fileKey}`, {
+        headers: { "X-Figma-Token": process.env.FIGMA_TOKEN },
+      }),
+      fetch(`https://api.figma.com/v1/files/${fileKey}/versions`, {
+        headers: { "X-Figma-Token": process.env.FIGMA_TOKEN },
+      }),
+    ]);
 
     if (!figmaRes.ok) {
       const err = await figmaRes.json().catch(() => ({}));
@@ -141,14 +151,24 @@ export async function POST(request) {
 
     const figmaData = await figmaRes.json();
 
+    // 3b. 提取版本历史中出现次数最多的编辑者（best-effort，失败不阻塞）
+    let versionHistoryName = null;
+    if (versionsRes.ok) {
+      try {
+        const versionsData = await versionsRes.json();
+        versionHistoryName = extractMostFrequentEditor(versionsData.versions || []);
+      } catch (e) {
+        console.warn("[analyze-figma] versions parse error:", e.message);
+      }
+    }
+
     // 4. 提取分析数据（只分析选中的 page）
     const selectedPage = (figmaData.document?.children || []).find((p) => p.id === pageId);
     const pageName = selectedPage?.name || pageId || "";
     const analysisData = extractAnalysisData(figmaData, pageId);
 
-    // 4b. 提取辅助姓名识别的元数据
+    // 4b. 提取辅助姓名识别的元数据（filename + cover texts，作为版本历史的备用）
     const fileName = figmaData.name || "";
-    const lastModifiedByName = extractLastModifiedByName(figmaData.lastModifiedBy);
 
     // 4c. 提取封面 Frame（最可能含署名）的文字，专门给 Claude 识别姓名
     const firstPage = figmaData.document?.children?.[0];
@@ -183,23 +203,21 @@ ${JSON.stringify(analysisData, null, 2)}
 
 ---
 
-**附加任务：同时识别提交作业的学生姓名**
+**附加任务：识别学生姓名（备用，版本历史已单独处理）**
 
 元数据提示：
 - Figma 文件名：「${fileName}」
-- 最后修改者账号：「${lastModifiedByName || "未知"}」
 - 封面/首页 Frame 中的文字（最可能含署名）：${coverTexts.length ? JSON.stringify(coverTexts) : "（无）"}
 
-识别规则（按优先级）：
-1. 图层文字中的人名：署名、"姓名：XX"、"学号+姓名"、"设计者：XX" 等格式中出现的名字
+识别规则：
+1. 图层文字中的署名、"姓名：XX"、"设计者：XX"、学号旁边的名字
 2. 文件名中包含的人名（如「张三的作业」→「张三」；「HCI_WeiChen」→「Wei Chen」）
-3. 最后修改者账号（若看起来像真实人名而非随机字符串）
-4. 无法识别则返回 null
+3. 无法识别则返回 null
 
 请严格以如下 JSON 格式返回，不要有任何其他文字：
 {
   "studentName": <识别到的学生姓名字符串，无法识别则返回 null>,
-  "studentNameSource": <"layer"（来自图层文字）| "filename"（来自文件名）| "modifier"（来自Figma账号）| null>,
+  "studentNameSource": <"layer"（来自图层文字）| "filename"（来自文件名）| null>,
   "overallScore": <0-100 整数，越高越像 AI 生成>,
   "label": <"高度疑似AI" | "部分疑似" | "原创可信">,
   "summary": <2-3 句综合评价>,
@@ -238,12 +256,13 @@ ${JSON.stringify(analysisData, null, 2)}
       }));
     }
 
-    // 6c. 学生姓名优先级：Claude图层识别 > Claude文件名提取 > lastModifiedBy > null
-    if (!result.studentName && lastModifiedByName) {
-      result.studentName = lastModifiedByName;
-      result.studentNameSource = "modifier";
+    // 6c. 学生姓名优先级：版本历史编辑者 > 图层文字(Claude) > 文件名(Claude) > null
+    // 版本历史是最可靠的来源（真实Figma操作记录），直接覆盖Claude的结果
+    if (versionHistoryName) {
+      result.studentName = versionHistoryName;
+      result.studentNameSource = "version_history";
     }
-    // studentName remains null if nothing was found (teacher fills in manually)
+    // 否则保留 Claude 识别到的 layer / filename 结果（或 null，由老师手动填写）
 
     // 7. 保存到 Supabase（fire-and-forget，不阻塞响应）
     supabase.from("scans").insert({
