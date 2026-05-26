@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { FrameReviewCard } from "../components/FrameReviewCard";
+import { FrameReviewCard, getActionMeta } from "../components/FrameReviewCard";
 
 const FIGMA_URL_RE = /figma\.com\/(file|design|proto)\/([a-zA-Z0-9]+)/;
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024; // 8 MB client-side guard
@@ -741,9 +741,21 @@ export default function NewScan() {
                   </span>
                 )}
                 <span>已审阅 {reviewCount}/{frames.length} 帧</span>
-                {reviewCount > 0 && (
-                  <span>· {Object.values(frameReviews).filter((r) => r.action === "confirm").length} 帧确认AI</span>
-                )}
+                {reviewCount > 0 && (() => {
+                  const vals = Object.values(frameReviews);
+                  const aiCount = vals.filter((r) =>
+                    r.action === "confirm_full_ai" || r.action === "confirm_partial_ai" || r.action === "confirm"
+                  ).length;
+                  const origCount = vals.filter((r) =>
+                    r.action === "confirm_original"
+                  ).length;
+                  return aiCount > 0 || origCount > 0 ? (
+                    <span>
+                      {aiCount > 0 && `· ${aiCount} 帧确认AI`}
+                      {origCount > 0 && `· ${origCount} 帧确认原创`}
+                    </span>
+                  ) : null;
+                })()}
               </div>
               <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.6 }}>{result.summary}</div>
             </div>
@@ -779,22 +791,21 @@ export default function NewScan() {
               <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 10 }}>📋 审阅汇总</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {frames.map((frame) => {
-                  const rev = frameReviews[frame.name];
-                  const fc  = frame.score >= 70 ? "#ef4444" : frame.score >= 40 ? "#f59e0b" : "#22c55e";
+                  const rev  = frameReviews[frame.name];
+                  const fc   = frame.score >= 70 ? "#ef4444" : frame.score >= 40 ? "#f59e0b" : "#22c55e";
+                  const meta = getActionMeta(rev?.action);
                   return (
                     <div key={frame.name} style={{
                       display: "flex", alignItems: "center", gap: 5,
                       padding: "4px 10px", borderRadius: 20, fontSize: 11,
-                      background: rev?.action === "confirm" ? "#d1fae5" : rev?.action === "override" ? "#fef3c7" : "#f1f5f9",
-                      color:      rev?.action === "confirm" ? "#059669"  : rev?.action === "override" ? "#d97706"  : "#64748b",
-                      border: `1px solid ${rev?.action === "confirm" ? "#a7f3d0" : rev?.action === "override" ? "#fde68a" : "#e2e8f0"}`,
+                      background: rev ? meta.bg     : "#f1f5f9",
+                      color:      rev ? meta.color  : "#64748b",
+                      border:     `1px solid ${rev ? meta.border : "#e2e8f0"}`,
                       fontWeight: 500,
                     }}>
                       <span style={{ width: 6, height: 6, borderRadius: "50%", background: fc, flexShrink: 0 }} />
                       {frame.name}
-                      <span style={{ marginLeft: 2 }}>
-                        {rev?.action === "confirm" ? "✅" : rev?.action === "override" ? "✏️" : "—"}
-                      </span>
+                      <span style={{ marginLeft: 2 }}>{rev ? meta.icon : "—"}</span>
                     </div>
                   );
                 })}
