@@ -58,9 +58,14 @@ export default function Sidebar() {
           <div style={{ fontSize: 14, fontWeight: 800, color: "#0f172a", letterSpacing: -0.4 }}>
             ProofMade
           </div>
-          <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 1, letterSpacing: 0.5 }}>
-            第一期上线
-          </div>
+          <span style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: 0.5,
+            color: "#2563eb", background: "#dbeafe",
+            padding: "1px 6px", borderRadius: 4, marginTop: 3,
+            display: "inline-block",
+          }}>
+            BETA
+          </span>
         </div>
       </div>
 
