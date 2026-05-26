@@ -264,18 +264,7 @@ ${JSON.stringify(analysisData, null, 2)}
     }
     // 否则保留 Claude 识别到的 layer / filename 结果（或 null，由老师手动填写）
 
-    // 7. 保存到 Supabase（fire-and-forget，不阻塞响应）
-    supabase.from("scans").insert({
-      user_id:      userId ?? null,
-      student_name: result.studentName ?? null,
-      figma_url:    figmaUrl,
-      page_name:    pageName,
-      ai_score:     result.overallScore,
-      analysis:     result,
-    }).then(({ error }) => {
-      if (error) console.error("[analyze-figma] supabase insert:", error.message);
-    });
-
+    // 7. 返回分析结果（保存由前端在 Step 3 确认后调用 /api/save-scan 完成）
     return NextResponse.json(result);
   } catch (err) {
     console.error("[analyze-figma]", err);
