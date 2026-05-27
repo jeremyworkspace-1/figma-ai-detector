@@ -1,6 +1,7 @@
-import { ClerkProvider, SignInButton, SignUpButton, Show, UserButton } from "@clerk/nextjs";
+import { ClerkProvider } from "@clerk/nextjs";
 import Sidebar from "./components/Sidebar";
 import BottomTabBar from "./components/BottomTabBar";
+import AuthHeader from "./components/AuthHeader";
 import { AppProvider } from "./context/AppContext";
 
 export const metadata = {
@@ -42,36 +43,7 @@ export default function RootLayout({ children }) {
                     flexShrink: 0,
                   }}
                 >
-                  {/* Auth controls */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <Show when="signed-out">
-                    <SignInButton>
-                      <button
-                        style={{
-                          padding: "6px 14px", borderRadius: 7, border: "1px solid #e2e8f0",
-                          background: "transparent", color: "#475569",
-                          fontSize: 13, fontWeight: 500, cursor: "pointer",
-                        }}
-                      >
-                        登录
-                      </button>
-                    </SignInButton>
-                    <SignUpButton>
-                      <button
-                        style={{
-                          padding: "6px 14px", borderRadius: 7, border: "none",
-                          background: "#2563eb", color: "#ffffff",
-                          fontSize: 13, fontWeight: 600, cursor: "pointer",
-                        }}
-                      >
-                        注册
-                      </button>
-                    </SignUpButton>
-                  </Show>
-                  <Show when="signed-in">
-                    <UserButton />
-                  </Show>
-                  </div>
+                  <AuthHeader />
                 </header>
 
                 {/* Main content */}

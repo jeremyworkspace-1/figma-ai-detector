@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Logo from "./Logo";
+import { useLang } from "../context/AppContext";
 
 const NAV_ITEMS = [
   { href: "/",            label: "Dashboard",   icon: "📊" },
@@ -14,6 +15,7 @@ const NAV_ITEMS = [
 export default function Sidebar() {
   const [expanded, setExpanded] = useState(true);
   const pathname = usePathname();
+  const { t } = useLang();
 
   return (
     <div
@@ -110,7 +112,7 @@ export default function Sidebar() {
       <div style={{ padding: "10px 8px", borderTop: "1px solid #e2e8f0", flexShrink: 0 }}>
         <button
           onClick={() => setExpanded(!expanded)}
-          title={expanded ? "收起" : "展开"}
+          title={expanded ? t("sidebar.collapse") : t("sidebar.expand")}
           style={{
             width: "100%",
             padding: "8px 10px",
@@ -128,7 +130,7 @@ export default function Sidebar() {
         >
           {expanded ? (
             <>
-              <span style={{ fontSize: 11 }}>收起</span>
+              <span style={{ fontSize: 11 }}>{t("sidebar.collapse")}</span>
               <span>◀</span>
             </>
           ) : (

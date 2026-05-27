@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { supabase } from "./lib/supabase";
+import { useLang } from "./context/AppContext";
 
 function StatCard({ label, value, color, bg }) {
   return (
@@ -45,6 +46,7 @@ function SkeletonRow() {
 
 export default function Dashboard() {
   const { user, isLoaded } = useUser();
+  const { t } = useLang();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ total: 0, avgScore: 0, highRisk: 0 });
   const [recent, setRecent] = useState([]);
@@ -84,23 +86,23 @@ export default function Dashboard() {
           Dashboard
         </h1>
         <p style={{ fontSize: 13, color: "#94a3b8", margin: "4px 0 0" }}>
-          检测概览与最近记录
+          {t("dashboard.subtitle")}
         </p>
       </div>
 
       {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 28 }}>
-        <StatCard label="已扫描"  value={loading ? "—" : `${stats.total}`}         color="#2563eb" bg="#eff6ff" />
-        <StatCard label="平均AI率" value={loading ? "—" : `${stats.avgScore}%`}    color={avgColor} bg={avgBg} />
-        <StatCard label="高风险"   value={loading ? "—" : `${stats.highRisk}`}      color="#dc2626" bg="#fef2f2" />
+        <StatCard label={t("dashboard.scanned")}   value={loading ? "—" : `${stats.total}`}      color="#2563eb" bg="#eff6ff" />
+        <StatCard label={t("dashboard.avgAiRate")} value={loading ? "—" : `${stats.avgScore}%`} color={avgColor} bg={avgBg} />
+        <StatCard label={t("dashboard.highRisk")}  value={loading ? "—" : `${stats.highRisk}`}  color="#dc2626" bg="#fef2f2" />
       </div>
 
       {/* Recent scans */}
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>最近检测</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{t("dashboard.recentDetections")}</div>
           <Link href="/submissions" style={{ fontSize: 12, color: "#2563eb", textDecoration: "none", fontWeight: 500 }}>
-            查看全部 →
+            {t("dashboard.viewAll")}
           </Link>
         </div>
 
@@ -111,15 +113,15 @@ export default function Dashboard() {
             textAlign: "center", padding: "32px 0",
             color: "#94a3b8", fontSize: 13,
           }}>
-            暂无检测记录，{" "}
+            {t("dashboard.noRecords")}
             <Link href="/new-scan" style={{ color: "#2563eb", textDecoration: "none" }}>
-              立即开始检测 →
+              {t("dashboard.startNow")}
             </Link>
           </div>
         ) : (
           recent.map((scan) => {
             const color = scan.ai_score >= 70 ? "#ef4444" : scan.ai_score >= 40 ? "#f59e0b" : "#22c55e";
-            const badge = scan.ai_score >= 70 ? "高度疑似" : scan.ai_score >= 40 ? "部分疑似" : "原创可信";
+            const badge = scan.ai_score >= 70 ? t("badge.highlyAI") : scan.ai_score >= 40 ? t("badge.partialAI") : t("badge.original");
             const title = scan.student_name || scan.page_name || "未命名";
             const sub   = [scan.page_name, new Date(scan.created_at).toLocaleDateString("zh-CN")].filter(Boolean).join(" · ");
             return (

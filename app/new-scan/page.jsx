@@ -3,54 +3,14 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { FrameReviewCard, getActionMeta } from "../components/FrameReviewCard";
+import { useLang } from "../context/AppContext";
 
 const FIGMA_URL_RE = /figma\.com\/(file|design|proto)\/([a-zA-Z0-9]+)/;
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024; // 8 MB client-side guard
 const ALLOWED_MIME = ["application/pdf", "image/png", "image/jpeg", "image/webp"];
 
-const NAME_SOURCE_LABEL = {
-  version_history: "版本历史",
-  layer:           "图层文字识别",
-  filename:        "文件名提取",
-};
-
-const JUDGMENT_OPTIONS = [
-  {
-    value: "ai",
-    icon:  "🚫",
-    label: "确认为AI生成内容",
-    desc:  "设计稿由 AI 工具生成，建议要求重做或按规处理",
-    color: "#ef4444",
-    bg:    "#fef2f2",
-    border:"#fecaca",
-  },
-  {
-    value: "original",
-    icon:  "✅",
-    label: "原创作品，误报",
-    desc:  "AI 检测误判，该作品为学生原创，正常通过",
-    color: "#16a34a",
-    bg:    "#f0fdf4",
-    border:"#bbf7d0",
-  },
-  {
-    value: "unclear",
-    icon:  "❓",
-    label: "待定，需进一步核查",
-    desc:  "证据不足，需与学生面谈后再作最终判断",
-    color: "#d97706",
-    bg:    "#fffbeb",
-    border:"#fde68a",
-  },
-];
-
 // ─── Step Indicator ────────────────────────────────────────────────────────────
-function StepIndicator({ current }) {
-  const steps = [
-    { label: "选择来源" },
-    { label: "审阅证据" },
-    { label: "最终判断" },
-  ];
+function StepIndicator({ current, steps }) {
   return (
     <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "center", marginBottom: 32 }}>
       {steps.flatMap((s, i) => {
@@ -92,12 +52,12 @@ function StepIndicator({ current }) {
 }
 
 // ─── ScoreRing ─────────────────────────────────────────────────────────────────
-function ScoreRing({ score, size = 80 }) {
+function ScoreRing({ score, size = 80, t }) {
   const radius = (size - 12) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (score / 100) * circumference;
   const color = score >= 70 ? "#ef4444" : score >= 40 ? "#f59e0b" : "#22c55e";
-  const label = score >= 70 ? "高度疑似" : score >= 40 ? "部分疑似" : "原创可信";
+  const label = score >= 70 ? t("badge.highlyAI") : score >= 40 ? t("badge.partialAI") : t("badge.original");
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
       <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
@@ -144,12 +104,13 @@ function IconPDF() {
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function NewScan() {
   const router = useRouter();
+  const { t } = useLang();
 
   // ── Step ────────────────────────────────────────────────────────────────────
   const [step, setStep] = useState(1);
 
-  // ── Input mode (figma | upload) ─────────────────────────────────────────────
-  const [inputMode,        setInputMode]        = useState("figma");
+  // ── Input mode ──────────────────────────────────────────────────────────────
+  const [inputMode, setInputMode] = useState("figma");
 
   // ── Step 1 – Figma state ────────────────────────────────────────────────────
   const [figmaUrl,       setFigmaUrl]       = useState("");
@@ -163,8 +124,7 @@ export default function NewScan() {
   const [uploadPreviewUrl, setUploadPreviewUrl] = useState(null);
   const [isDragOver,       setIsDragOver]       = useState(false);
   const fileInputRef = useRef(null);
-  // Track blob URL in a ref so we can revoke without stale-closure issues
-  const blobUrlRef = useRef(null);
+  const blobUrlRef   = useRef(null);
 
   // ── Shared analysis state ────────────────────────────────────────────────────
   const [analyzing,    setAnalyzing]    = useState(false);
@@ -184,10 +144,10 @@ export default function NewScan() {
   const [saveError,     setSaveError]     = useState("");
   const [savedId,       setSavedId]       = useState(null);
 
-  // Revoke blob URL when component unmounts
+  // Revoke blob URL on unmount
   useEffect(() => () => { if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current); }, []);
 
-  // ── Auto-fetch Figma pages when URL looks valid ───────────────────────────────
+  // ── Auto-fetch Figma pages ───────────────────────────────────────────────────
   useEffect(() => {
     if (!FIGMA_URL_RE.test(figmaUrl)) {
       setPages([]); setSelectedPageId(""); setPagesError(""); return;
@@ -223,11 +183,7 @@ export default function NewScan() {
       setAnalyzeError(`文件超过 8 MB，请压缩后重试（当前 ${(f.size / 1024 / 1024).toFixed(1)} MB）`);
       return;
     }
-    // Revoke previous blob URL
-    if (blobUrlRef.current) {
-      URL.revokeObjectURL(blobUrlRef.current);
-      blobUrlRef.current = null;
-    }
+    if (blobUrlRef.current) { URL.revokeObjectURL(blobUrlRef.current); blobUrlRef.current = null; }
     setUploadFile(f);
     if (f.type !== "application/pdf") {
       const url = URL.createObjectURL(f);
@@ -246,16 +202,10 @@ export default function NewScan() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handleFileInputChange = (e) => {
-    const f = e.target.files?.[0];
-    if (f) processFile(f);
-  };
-
+  const handleFileInputChange = (e) => { const f = e.target.files?.[0]; if (f) processFile(f); };
   const handleDrop = (e) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    const f = e.dataTransfer.files?.[0];
-    if (f) processFile(f);
+    e.preventDefault(); setIsDragOver(false);
+    const f = e.dataTransfer.files?.[0]; if (f) processFile(f);
   };
 
   // ── After analysis: shared setup ─────────────────────────────────────────────
@@ -267,7 +217,7 @@ export default function NewScan() {
     setStep(2);
   };
 
-  // ── Step 1 → Step 2: Figma analysis ──────────────────────────────────────────
+  // ── Figma analysis ────────────────────────────────────────────────────────────
   const handleAnalyzeFigma = async () => {
     if (!figmaUrl.trim() || !selectedPageId || analyzing) return;
     setAnalyzing(true); setAnalyzeError("");
@@ -278,11 +228,8 @@ export default function NewScan() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "分析失败");
-
       applyResult(data);
       setThumbnails({});
-
-      // Fetch Figma frame thumbnails in the background
       const nodeIds = (data.frames || []).map((f) => f.nodeId).filter(Boolean);
       if (nodeIds.length > 0) {
         setThumbLoading(true);
@@ -302,7 +249,7 @@ export default function NewScan() {
     }
   };
 
-  // ── Step 1 → Step 2: Upload analysis ─────────────────────────────────────────
+  // ── Upload analysis ───────────────────────────────────────────────────────────
   const handleAnalyzeUpload = async () => {
     if (!uploadFile || analyzing) return;
     setAnalyzing(true); setAnalyzeError("");
@@ -312,7 +259,6 @@ export default function NewScan() {
       const res  = await fetch("/api/analyze-upload", { method: "POST", body });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "分析失败");
-
       applyResult(data);
       setThumbnails({});
       setThumbLoading(false);
@@ -323,22 +269,20 @@ export default function NewScan() {
     }
   };
 
-  // ── Frame review handler (local state only, saved at Step 3) ──────────────────
+  // ── Frame review (local state) ────────────────────────────────────────────────
   const handleFrameReview = (frameName, action, note) => {
     setFrameReviews((prev) => {
-      if (action === null) {
-        const next = { ...prev }; delete next[frameName]; return next;
-      }
+      if (action === null) { const next = { ...prev }; delete next[frameName]; return next; }
       return { ...prev, [frameName]: { action, note, reviewedAt: new Date().toISOString() } };
     });
   };
 
-  // ── Step 3: save to DB ────────────────────────────────────────────────────────
+  // ── Save to DB ────────────────────────────────────────────────────────────────
   const handleSave = async () => {
     if (!finalJudgment) return;
     setSaving(true); setSaveError("");
     try {
-      const isUpload   = result?.sourceType === "upload";
+      const isUpload     = result?.sourceType === "upload";
       const selectedPage = pages.find((p) => p.id === selectedPageId);
       const res = await fetch("/api/save-scan", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -363,7 +307,7 @@ export default function NewScan() {
     }
   };
 
-  // ── Reset everything ──────────────────────────────────────────────────────────
+  // ── Reset ─────────────────────────────────────────────────────────────────────
   const handleReset = () => {
     setStep(1); setResult(null); setThumbnails({}); setFrameReviews({});
     setStudentName(""); setFinalJudgment(""); setTeacherNote("");
@@ -380,18 +324,59 @@ export default function NewScan() {
   const resultColor     = result
     ? result.overallScore >= 70 ? "#ef4444" : result.overallScore >= 40 ? "#f59e0b" : "#22c55e"
     : "#94a3b8";
-  const isUpload        = result?.sourceType === "upload";
+  const isUpload = result?.sourceType === "upload";
 
-  // For uploaded images, use the blob URL as the thumbnail for every frame card
   const getThumbnail = (frame) => {
     if (isUpload) return uploadPreviewUrl || null;
     return thumbnails[frame.nodeId] ?? null;
   };
 
-  // Source label shown in Step 2/3 (page name for Figma, filename for upload)
   const sourceLabel = isUpload
-    ? (result?.fileName || "上传文件")
+    ? (result?.fileName || t("newScan.uploadedFile"))
     : (pages.find((p) => p.id === selectedPageId)?.name || "");
+
+  // i18n-derived constants (must be inside component to use t)
+  const nameSourceLabel = {
+    version_history: t("nameSource.version_history"),
+    layer:           t("nameSource.layer"),
+    filename:        t("nameSource.filename"),
+  };
+
+  const DTYPE = {
+    ui_ai:    { label: t("dtype.ui_ai"),    color: "#7c3aed", bg: "#ede9fe" },
+    image_ai: { label: t("dtype.image_ai"), color: "#ea580c", bg: "#fff7ed" },
+    both:     { label: t("dtype.both"),     color: "#dc2626", bg: "#fee2e2" },
+  };
+
+  const JUDGMENT_OPTIONS = [
+    {
+      value: "ai",
+      icon:  "🚫",
+      label: t("judgment.ai.label"),
+      desc:  t("judgment.ai.desc"),
+      color: "#ef4444", bg: "#fef2f2", border: "#fecaca",
+    },
+    {
+      value: "original",
+      icon:  "✅",
+      label: t("judgment.original.label"),
+      desc:  t("judgment.original.desc"),
+      color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0",
+    },
+    {
+      value: "unclear",
+      icon:  "❓",
+      label: t("judgment.unclear.label"),
+      desc:  t("judgment.unclear.desc"),
+      color: "#d97706", bg: "#fffbeb", border: "#fde68a",
+    },
+  ];
+
+  const steps = [
+    { label: t("newScan.step1") },
+    { label: t("newScan.step2") },
+    { label: t("newScan.step3") },
+  ];
 
   // ═══════════════════════════════════════════════════════════════════════════════
   return (
@@ -400,25 +385,23 @@ export default function NewScan() {
       <div style={{ marginBottom: 28 }}>
         <h1 style={{ fontSize: 22, fontWeight: 800, color: "#0f172a", margin: 0, letterSpacing: -.5 }}>New Scan</h1>
         <p style={{ fontSize: 13, color: "#94a3b8", margin: "4px 0 0" }}>
-          三步完成 AI 检测与教师审阅，最终保存到 Submissions
+          {t("newScan.subtitle")}
         </p>
       </div>
 
-      {/* Step indicator */}
-      {!savedId && <StepIndicator current={step} />}
+      {!savedId && <StepIndicator current={step} steps={steps} />}
 
       {/* ════════ STEP 1 ════════════════════════════════════════════════════════ */}
       {step === 1 && (
         <div style={{ maxWidth: 560 }}>
-
           {/* Mode toggle */}
           <div style={{
             display: "flex", marginBottom: 20,
             border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden",
           }}>
             {[
-              { key: "figma",  label: "🔗  Figma 链接" },
-              { key: "upload", label: "📁  上传文件" },
+              { key: "figma",  label: t("newScan.figmaTab") },
+              { key: "upload", label: t("newScan.uploadTab") },
             ].map((m) => {
               const active = inputMode === m.key;
               return (
@@ -437,11 +420,11 @@ export default function NewScan() {
             })}
           </div>
 
-          {/* ─── Figma URL mode ─────────────────────────────────────── */}
+          {/* ─── Figma URL mode ─────────────────────────────────────────── */}
           {inputMode === "figma" && (
             <>
               <input type="url" value={figmaUrl} onChange={(e) => setFigmaUrl(e.target.value)}
-                placeholder="粘贴 Figma 分享链接，例如：https://www.figma.com/file/..."
+                placeholder={t("newScan.figmaPlaceholder")}
                 style={{
                   width: "100%", padding: "10px 14px", borderRadius: 9,
                   border: "1px solid #e2e8f0", fontSize: 13, color: "#0f172a",
@@ -452,11 +435,10 @@ export default function NewScan() {
                 onBlur={(e)  => (e.target.style.borderColor = "#e2e8f0")} />
 
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                {/* Page dropdown */}
                 <div style={{ flex: 1 }}>
                   {pagesLoading ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 9, border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: 13, color: "#94a3b8" }}>
-                      <Spinner color="#94a3b8" /> 正在读取页面…
+                      <Spinner color="#94a3b8" /> {t("newScan.loadingPages")}
                     </div>
                   ) : pages.length > 0 ? (
                     <select value={selectedPageId} onChange={(e) => setSelectedPageId(e.target.value)}
@@ -474,7 +456,7 @@ export default function NewScan() {
                     </select>
                   ) : (
                     <div style={{ padding: "10px 14px", borderRadius: 9, border: "1px dashed #e2e8f0", background: "#f8fafc", fontSize: 13, color: "#cbd5e1" }}>
-                      粘贴链接后自动显示页面列表
+                      {t("newScan.pasteHint")}
                     </div>
                   )}
                 </div>
@@ -488,7 +470,7 @@ export default function NewScan() {
                   display: "flex", alignItems: "center", gap: 6,
                   flexShrink: 0, whiteSpace: "nowrap", transition: "all .15s",
                 }}>
-                  {analyzing ? <><Spinner color="#fff" /> 分析中…</> : "开始检测 →"}
+                  {analyzing ? <><Spinner color="#fff" /> {t("newScan.analyzing")}</> : t("newScan.startScan")}
                 </button>
               </div>
 
@@ -503,7 +485,6 @@ export default function NewScan() {
           {/* ─── Upload mode ──────────────────────────────────────────── */}
           {inputMode === "upload" && (
             <>
-              {/* Hidden file input */}
               <input
                 ref={fileInputRef}
                 type="file"
@@ -512,7 +493,6 @@ export default function NewScan() {
                 style={{ display: "none" }}
               />
 
-              {/* Drop zone */}
               <div
                 onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
                 onDragLeave={() => setIsDragOver(false)}
@@ -529,61 +509,41 @@ export default function NewScan() {
                   marginBottom: 12,
                 }}>
                 {uploadFile ? (
-                  /* File selected state */
                   <div>
-                    {/* Image preview */}
                     {uploadPreviewUrl && (
-                      <img
-                        src={uploadPreviewUrl}
-                        alt="preview"
-                        style={{
-                          maxHeight: 160, maxWidth: "100%",
-                          borderRadius: 8, marginBottom: 12,
-                          objectFit: "contain", display: "block", margin: "0 auto 12px",
-                        }}
-                      />
+                      <img src={uploadPreviewUrl} alt="preview"
+                        style={{ maxHeight: 160, maxWidth: "100%", borderRadius: 8, marginBottom: 12, objectFit: "contain", display: "block", margin: "0 auto 12px" }} />
                     )}
-                    {/* PDF icon */}
-                    {!uploadPreviewUrl && (
-                      <div style={{ marginBottom: 8 }}><IconPDF /></div>
-                    )}
+                    {!uploadPreviewUrl && <div style={{ marginBottom: 8 }}><IconPDF /></div>}
                     <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", marginBottom: 3 }}>
                       {uploadFile.name}
                     </div>
                     <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
                       {(uploadFile.size / 1024 / 1024).toFixed(2)} MB
                       &nbsp;·&nbsp;
-                      {uploadFile.type === "application/pdf" ? "PDF 文档" :
-                       uploadFile.type === "image/png" ? "PNG 图片" :
-                       uploadFile.type === "image/jpeg" ? "JPEG 图片" : "WEBP 图片"}
+                      {uploadFile.type === "application/pdf" ? t("newScan.pdfDoc")  :
+                       uploadFile.type === "image/png"       ? t("newScan.pngImg")  :
+                       uploadFile.type === "image/jpeg"      ? t("newScan.jpegImg") : t("newScan.webpImg")}
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); clearUpload(); }}
-                      style={{
-                        padding: "4px 14px", borderRadius: 6,
-                        border: "1px solid #fecaca", background: "#fef2f2",
-                        color: "#dc2626", fontSize: 12, cursor: "pointer",
-                      }}>
-                      移除文件
+                      style={{ padding: "4px 14px", borderRadius: 6, border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontSize: 12, cursor: "pointer" }}>
+                      {t("newScan.removeFile")}
                     </button>
                   </div>
                 ) : (
-                  /* Empty state */
                   <div>
-                    <div style={{ fontSize: 36, marginBottom: 10 }}>
-                      {isDragOver ? "📂" : "☁️"}
-                    </div>
+                    <div style={{ fontSize: 36, marginBottom: 10 }}>{isDragOver ? "📂" : "☁️"}</div>
                     <div style={{ fontSize: 14, fontWeight: 600, color: "#374151", marginBottom: 6 }}>
-                      {isDragOver ? "松开以上传" : "拖拽文件到此处，或点击选择"}
+                      {isDragOver ? t("newScan.dropRelease") : t("newScan.dropHint")}
                     </div>
                     <div style={{ fontSize: 12, color: "#94a3b8" }}>
-                      支持 PDF、PNG、JPG、WEBP · 最大 8 MB
+                      {t("newScan.dropFormat")}
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Analyze button */}
               <button
                 onClick={handleAnalyzeUpload}
                 disabled={!uploadFile || analyzing}
@@ -596,22 +556,17 @@ export default function NewScan() {
                   display: "flex", alignItems: "center", justifyContent: "center",
                   gap: 6, transition: "all .15s",
                 }}>
-                {analyzing ? <><Spinner color="#fff" /> 分析中…</> : "开始检测 →"}
+                {analyzing ? <><Spinner color="#fff" /> {t("newScan.analyzing")}</> : t("newScan.startScan")}
               </button>
 
-              {/* Supported format badges */}
               <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
                 {["PDF", "PNG", "JPG", "WEBP"].map((fmt) => (
-                  <span key={fmt} style={{
-                    padding: "2px 10px", borderRadius: 20, border: "1px solid #e2e8f0",
-                    fontSize: 11, color: "#94a3b8", background: "#f8fafc",
-                  }}>{fmt}</span>
+                  <span key={fmt} style={{ padding: "2px 10px", borderRadius: 20, border: "1px solid #e2e8f0", fontSize: 11, color: "#94a3b8", background: "#f8fafc" }}>{fmt}</span>
                 ))}
               </div>
             </>
           )}
 
-          {/* Shared error + skeleton */}
           {analyzeError && (
             <div style={{ marginTop: 12, padding: "8px 12px", borderRadius: 8, background: "#fef2f2", border: "1px solid #fecaca", fontSize: 13, color: "#dc2626" }}>
               ⚠ {analyzeError}
@@ -632,18 +587,16 @@ export default function NewScan() {
       {/* ════════ STEP 2: Frame review ════════════════════════════════════════ */}
       {step === 2 && result && (
         <div>
-          {/* Top bar */}
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
             <button
               onClick={() => { setStep(1); setResult(null); setThumbnails({}); setFrameReviews({}); }}
               style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-              ← 重新输入
+              {t("newScan.back")}
             </button>
 
-            {/* Review progress */}
             <div style={{ flex: 1, minWidth: 200 }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#64748b", marginBottom: 4 }}>
-                <span style={{ fontWeight: 600 }}>已审阅帧</span>
+                <span style={{ fontWeight: 600 }}>{t("newScan.reviewedFrames")}</span>
                 <span style={{ fontFamily: "monospace", color: reviewCount === frames.length && frames.length > 0 ? "#16a34a" : "#64748b" }}>
                   {reviewCount} / {frames.length}
                   {reviewCount === frames.length && frames.length > 0 && " ✓"}
@@ -661,7 +614,7 @@ export default function NewScan() {
 
             <button onClick={() => setStep(3)}
               style={{ padding: "7px 18px", borderRadius: 8, border: "none", background: "#2563eb", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-              下一步 →
+              {t("newScan.next")}
             </button>
           </div>
 
@@ -671,10 +624,10 @@ export default function NewScan() {
             borderLeft: `3px solid ${resultColor}`, borderRadius: 12,
             padding: "16px 20px", display: "flex", alignItems: "center", gap: 20, marginBottom: 20,
           }}>
-            <ScoreRing score={result.overallScore} size={74} />
+            <ScoreRing score={result.overallScore} size={74} t={t} />
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 11, color: "#94a3b8", letterSpacing: .5, marginBottom: 3, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
-                <span>综合检测结果</span>
+                <span>{t("newScan.overallResult")}</span>
                 {sourceLabel && <span style={{ color: "#cbd5e1" }}>·</span>}
                 {sourceLabel && (
                   <span style={{ padding: "1px 7px", borderRadius: 20, background: "#f1f5f9", color: "#64748b", fontSize: 10 }}>
@@ -682,11 +635,6 @@ export default function NewScan() {
                   </span>
                 )}
                 {isUpload && result.detectionType && result.detectionType !== "original" && (() => {
-                  const DTYPE = {
-                    ui_ai:    { label: "AI设计稿",   color: "#7c3aed", bg: "#ede9fe" },
-                    image_ai: { label: "AI生成图像", color: "#ea580c", bg: "#fff7ed" },
-                    both:     { label: "双重AI特征", color: "#dc2626", bg: "#fee2e2" },
-                  };
                   const d = DTYPE[result.detectionType];
                   return d ? (
                     <span style={{ padding: "1px 7px", borderRadius: 20, background: d.bg, color: d.color, fontWeight: 700, fontSize: 10, letterSpacing: .2 }}>
@@ -697,7 +645,7 @@ export default function NewScan() {
                 {result.studentName && (
                   <span style={{ padding: "1px 7px", borderRadius: 20, background: "#e0f2fe", color: "#0284c7", fontWeight: 600, fontSize: 10 }}>
                     👤 {result.studentName}
-                    {result.studentNameSource && ` · ${NAME_SOURCE_LABEL[result.studentNameSource] || ""}`}
+                    {result.studentNameSource && ` · ${nameSourceLabel[result.studentNameSource] || ""}`}
                   </span>
                 )}
               </div>
@@ -709,7 +657,7 @@ export default function NewScan() {
           {/* Frame cards */}
           {frames.length === 0 ? (
             <div style={{ fontSize: 13, color: "#94a3b8", textAlign: "center", padding: "32px 0" }}>
-              没有可审阅的区域
+              {t("newScan.noFrames")}
             </div>
           ) : (
             frames.map((frame) => (
@@ -724,11 +672,10 @@ export default function NewScan() {
             ))
           )}
 
-          {/* Bottom next button */}
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
             <button onClick={() => setStep(3)}
               style={{ padding: "10px 24px", borderRadius: 9, border: "none", background: "#2563eb", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
-              进入最终判断 →
+              {t("newScan.toFinalJudgment")}
             </button>
           </div>
         </div>
@@ -739,12 +686,12 @@ export default function NewScan() {
         <div style={{ maxWidth: 640 }}>
           <button onClick={() => setStep(2)}
             style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", fontSize: 13, cursor: "pointer", marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
-            ← 返回审阅
+            {t("newScan.backToReview")}
           </button>
 
           {/* Summary card */}
           <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "18px 20px", marginBottom: 16, display: "flex", alignItems: "center", gap: 20 }}>
-            <ScoreRing score={result.overallScore} size={72} />
+            <ScoreRing score={result.overallScore} size={72} t={t} />
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 16, fontWeight: 700, color: resultColor, marginBottom: 4 }}>{result.label}</div>
               <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6, display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -754,11 +701,6 @@ export default function NewScan() {
                   </span>
                 )}
                 {isUpload && result.detectionType && result.detectionType !== "original" && (() => {
-                  const DTYPE = {
-                    ui_ai:    { label: "AI设计稿",   color: "#7c3aed", bg: "#ede9fe" },
-                    image_ai: { label: "AI生成图像", color: "#ea580c", bg: "#fff7ed" },
-                    both:     { label: "双重AI特征", color: "#dc2626", bg: "#fee2e2" },
-                  };
                   const d = DTYPE[result.detectionType];
                   return d ? (
                     <span style={{ padding: "1px 7px", borderRadius: 20, background: d.bg, color: d.color, fontWeight: 700, fontSize: 11 }}>
@@ -766,19 +708,15 @@ export default function NewScan() {
                     </span>
                   ) : null;
                 })()}
-                <span>已审阅 {reviewCount}/{frames.length} 帧</span>
+                <span>{t("newScan.framesReviewed", reviewCount, frames.length)}</span>
                 {reviewCount > 0 && (() => {
                   const vals = Object.values(frameReviews);
-                  const aiCount = vals.filter((r) =>
-                    r.action === "confirm_full_ai" || r.action === "confirm_partial_ai" || r.action === "confirm"
-                  ).length;
-                  const origCount = vals.filter((r) =>
-                    r.action === "confirm_original"
-                  ).length;
-                  return aiCount > 0 || origCount > 0 ? (
+                  const aiCount   = vals.filter((r) => r.action === "confirm_full_ai" || r.action === "confirm_partial_ai" || r.action === "confirm").length;
+                  const origCount = vals.filter((r) => r.action === "confirm_original").length;
+                  return (aiCount > 0 || origCount > 0) ? (
                     <span>
-                      {aiCount > 0 && `· ${aiCount} 帧确认AI`}
-                      {origCount > 0 && `· ${origCount} 帧确认原创`}
+                      {aiCount   > 0 && t("newScan.confirmedAI",       aiCount)}
+                      {origCount > 0 && t("newScan.confirmedOriginal",  origCount)}
                     </span>
                   ) : null;
                 })()}
@@ -789,18 +727,18 @@ export default function NewScan() {
 
           {/* Student name */}
           <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 18px", marginBottom: 16 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 8 }}>👤 学生姓名</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 8 }}>{t("newScan.studentName")}</div>
             {result.studentName && result.studentNameSource && (
               <div style={{ fontSize: 11, color: "#0284c7", marginBottom: 7 }}>
                 <span style={{ padding: "2px 8px", borderRadius: 20, background: "#e0f2fe", fontWeight: 600 }}>
-                  ✨ 自动识别 · {NAME_SOURCE_LABEL[result.studentNameSource] || result.studentNameSource}
+                  {t("newScan.autoDetected")} {nameSourceLabel[result.studentNameSource] || result.studentNameSource}
                 </span>
               </div>
             )}
             <input
               value={studentName}
               onChange={(e) => setStudentName(e.target.value)}
-              placeholder="输入学生姓名…"
+              placeholder={t("newScan.studentNamePlaceholder")}
               style={{
                 width: "100%", padding: "8px 12px", borderRadius: 8,
                 border: "1px solid #e2e8f0", fontSize: 14, color: "#0f172a",
@@ -811,10 +749,10 @@ export default function NewScan() {
             />
           </div>
 
-          {/* Frame review summary (compact chips) */}
+          {/* Frame review summary */}
           {frames.length > 0 && (
             <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 18px", marginBottom: 16 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 10 }}>📋 审阅汇总</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 10 }}>{t("newScan.reviewSummary")}</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {frames.map((frame) => {
                   const rev  = frameReviews[frame.name];
@@ -842,7 +780,7 @@ export default function NewScan() {
           {/* Final judgment */}
           <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 18px", marginBottom: 16 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 12 }}>
-              ⚖️ 最终判断 <span style={{ color: "#ef4444" }}>*</span>
+              {t("newScan.finalJudgment")} <span style={{ color: "#ef4444" }}>*</span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {JUDGMENT_OPTIONS.map((opt) => {
@@ -873,12 +811,12 @@ export default function NewScan() {
           {/* Teacher note */}
           <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 18px", marginBottom: 20 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 8 }}>
-              💬 给学生的备注 <span style={{ color: "#94a3b8", fontWeight: 400 }}>（可选）</span>
+              {t("newScan.teacherNote")} <span style={{ color: "#94a3b8", fontWeight: 400 }}>{t("newScan.optional")}</span>
             </div>
             <textarea
               value={teacherNote}
               onChange={(e) => setTeacherNote(e.target.value)}
-              placeholder="例如：请于下周前提交原创设计稿，或附上设计过程草图供核查…"
+              placeholder={t("newScan.teacherNotePlaceholder")}
               rows={3}
               style={{
                 width: "100%", padding: "8px 12px", borderRadius: 8,
@@ -891,7 +829,6 @@ export default function NewScan() {
             />
           </div>
 
-          {/* Save button */}
           {saveError && (
             <div style={{ padding: "8px 14px", borderRadius: 8, background: "#fef2f2", border: "1px solid #fecaca", fontSize: 13, color: "#dc2626", marginBottom: 12 }}>
               ⚠ {saveError}
@@ -909,11 +846,11 @@ export default function NewScan() {
               display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
               transition: "all .15s",
             }}>
-            {saving ? <><Spinner color="#fff" /> 保存中…</> : "确认保存 →"}
+            {saving ? <><Spinner color="#fff" /> {t("newScan.saving")}</> : t("newScan.saveRecord")}
           </button>
           {!finalJudgment && (
             <div style={{ textAlign: "center", fontSize: 12, color: "#94a3b8", marginTop: 8 }}>
-              请先选择最终判断再保存
+              {t("newScan.pleaseSelect")}
             </div>
           )}
         </div>
@@ -923,12 +860,11 @@ export default function NewScan() {
       {savedId && (
         <div style={{ maxWidth: 480, margin: "0 auto", textAlign: "center", padding: "40px 0" }}>
           <div style={{ fontSize: 56, marginBottom: 16 }}>✅</div>
-          <h2 style={{ fontSize: 22, fontWeight: 800, color: "#0f172a", margin: "0 0 8px" }}>记录已保存</h2>
+          <h2 style={{ fontSize: 22, fontWeight: 800, color: "#0f172a", margin: "0 0 8px" }}>{t("newScan.savedTitle")}</h2>
           <p style={{ fontSize: 14, color: "#64748b", marginBottom: 32, lineHeight: 1.7 }}>
-            检测结果、帧审阅记录和最终判断已写入数据库，<br />可在 Submissions 页面查看完整记录。
+            {t("newScan.savedDesc")}
           </p>
 
-          {/* Summary chips */}
           <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap", marginBottom: 32 }}>
             {studentName && (
               <span style={{ padding: "5px 14px", borderRadius: 20, background: "#f1f5f9", color: "#475569", fontSize: 13, fontWeight: 600 }}>
@@ -951,11 +887,11 @@ export default function NewScan() {
           <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
             <button onClick={() => router.push("/submissions")}
               style={{ padding: "10px 22px", borderRadius: 9, border: "none", background: "#2563eb", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
-              查看 Submissions →
+              {t("newScan.viewSubmissions")}
             </button>
             <button onClick={handleReset}
               style={{ padding: "10px 22px", borderRadius: 9, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontSize: 14, cursor: "pointer" }}>
-              新建检测
+              {t("newScan.newScan")}
             </button>
           </div>
         </div>

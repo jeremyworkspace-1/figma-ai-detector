@@ -5,12 +5,7 @@ import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { supabase } from "../lib/supabase";
 import { FrameReviewCard } from "../components/FrameReviewCard";
-
-const NAME_SOURCE_LABEL = {
-  version_history: "版本历史",
-  layer:           "图层文字识别",
-  filename:        "文件名提取",
-};
+import { useLang } from "../context/AppContext";
 
 // ─── ScoreRing ─────────────────────────────────────────────────────────────────
 function ScoreRing({ score, size = 60 }) {
@@ -36,6 +31,7 @@ function ScoreRing({ score, size = 60 }) {
 
 // ─── ResultCard ────────────────────────────────────────────────────────────────
 function ResultCard({ scan: initialScan, userId }) {
+  const { t } = useLang();
   const [expanded,     setExpanded]     = useState(false);
   const [studentName,  setStudentName]  = useState(initialScan.student_name || "");
   const [nameEditing,  setNameEditing]  = useState(false);
@@ -45,19 +41,19 @@ function ResultCard({ scan: initialScan, userId }) {
   const [thumbnails,   setThumbnails]   = useState({});
   const [thumbLoading, setThumbLoading] = useState(false);
   const [reviews,      setReviews]      = useState(initialScan.teacher_reviews || {});
-  // Track value at edit-start so Escape can revert
   const editStartRef = useRef(initialScan.student_name || "");
 
   const score      = initialScan.ai_score;
   const color      = score >= 70 ? "#ef4444" : score >= 40 ? "#f59e0b" : "#22c55e";
-  const badge      = score >= 70 ? "⚠ 高度疑似AI" : score >= 40 ? "◑ 部分疑似" : "✓ 原创可信";
+  const badge      = score >= 70 ? t("submissions.badgeHighlyAI") : score >= 40 ? t("submissions.badgePartialAI") : t("submissions.badgeOriginal");
   const frames     = initialScan.analysis?.frames || [];
   const nameSource = initialScan.analysis?.studentNameSource ?? null;
   const reviewedCount = Object.keys(reviews).length;
-  const dateStr = new Date(initialScan.created_at).toLocaleDateString("zh-CN");
+  const dateStr = new Date(initialScan.created_at).toLocaleDateString();
 
-  // Lazy-load thumbnails on first expand (skip for upload-sourced scans)
   const isUploadScan = initialScan.figma_url?.startsWith("upload://");
+
+  // Lazy-load thumbnails on first expand (skip for upload scans)
   useEffect(() => {
     if (!expanded || !initialScan.figma_url || isUploadScan) return;
     const nodeIds = frames.map((f) => f.nodeId).filter(Boolean);
@@ -110,6 +106,20 @@ function ResultCard({ scan: initialScan, userId }) {
       .eq("user_id", userId);
   };
 
+  // Detection-type badges (used in expanded AI assessment)
+  const DTYPE = {
+    ui_ai:    { label: t("dtype.ui_ai"),    color: "#7c3aed", bg: "#ede9fe" },
+    image_ai: { label: t("dtype.image_ai"), color: "#ea580c", bg: "#fff7ed" },
+    both:     { label: t("dtype.both"),     color: "#dc2626", bg: "#fee2e2" },
+  };
+
+  // Name source labels
+  const nameSourceLabel = {
+    version_history: t("nameSource.version_history"),
+    layer:           t("nameSource.layer"),
+    filename:        t("nameSource.filename"),
+  };
+
   return (
     <div style={{
       background: expanded ? "#f8fafc" : "#ffffff",
@@ -124,8 +134,6 @@ function ResultCard({ scan: initialScan, userId }) {
 
           {/* Row 1: name + badges */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3, flexWrap: "wrap" }}>
-
-            {/* Inline-editable name */}
             {nameEditing ? (
               <input
                 autoFocus
@@ -138,7 +146,7 @@ function ResultCard({ scan: initialScan, userId }) {
                   if (e.key === "Escape") cancelNameEdit();
                 }}
                 onClick={(e) => e.stopPropagation()}
-                placeholder="填写学生姓名…"
+                placeholder={t("submissions.noName")}
                 style={{
                   fontSize: 15, fontWeight: 700, color: "#0f172a",
                   border: "1px solid #93c5fd", borderRadius: 6,
@@ -154,7 +162,7 @@ function ResultCard({ scan: initialScan, userId }) {
                   setNameEditing(true);
                   setNameDirty(false);
                 }}
-                title="点击编辑姓名"
+                title={t("submissions.clickToEdit")}
                 style={{
                   fontSize: 15, fontWeight: 700,
                   color: studentName ? "#0f172a" : "#cbd5e1",
@@ -164,44 +172,42 @@ function ResultCard({ scan: initialScan, userId }) {
                 onMouseEnter={(e) => (e.target.style.borderBottomColor = "#cbd5e1")}
                 onMouseLeave={(e) => (e.target.style.borderBottomColor = "transparent")}
               >
-                {studentName || "未填写学生姓名"}
+                {studentName || t("submissions.noName")}
               </span>
             )}
 
-            {/* Saved confirmation */}
             {nameSaved && !nameEditing && (
-              <span style={{ fontSize: 11, color: "#16a34a", flexShrink: 0 }}>✓ 已保存</span>
+              <span style={{ fontSize: 11, color: "#16a34a", flexShrink: 0 }}>{t("submissions.saved")}</span>
             )}
 
-            {/* Auto-detect source badge */}
             {nameSource && studentName && !nameEditing && (
               <span style={{
                 fontSize: 9, padding: "1px 7px", borderRadius: 20, flexShrink: 0,
                 background: "#e0f2fe", color: "#0284c7", fontWeight: 700, letterSpacing: .2,
               }}>
-                ✨ {NAME_SOURCE_LABEL[nameSource] || nameSource}
+                ✨ {nameSourceLabel[nameSource] || nameSource}
               </span>
             )}
 
-            {/* AI score badge */}
             <span style={{
               fontSize: 10, padding: "2px 8px", borderRadius: 20, flexShrink: 0,
               background: color + "18", color, fontWeight: 700, letterSpacing: .4,
             }}>{badge}</span>
 
-            {/* Review progress badge */}
             {reviewedCount > 0 && (
               <span style={{
                 fontSize: 10, padding: "2px 8px", borderRadius: 20, flexShrink: 0,
                 background: reviewedCount === frames.length ? "#d1fae5" : "#dbeafe",
                 color: reviewedCount === frames.length ? "#059669" : "#2563eb", fontWeight: 600,
               }}>
-                {reviewedCount === frames.length ? "✓ 审阅完成" : `审阅 ${reviewedCount}/${frames.length}`}
+                {reviewedCount === frames.length
+                  ? t("submissions.reviewComplete")
+                  : t("submissions.reviewed", reviewedCount, frames.length)}
               </span>
             )}
           </div>
 
-          {/* Row 2: page name · date · Figma link */}
+          {/* Row 2: page name · date · file link */}
           <div style={{ fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             <span>{[initialScan.page_name, dateStr].filter(Boolean).join(" · ")}</span>
             {!isUploadScan && initialScan.figma_url && (
@@ -216,7 +222,7 @@ function ResultCard({ scan: initialScan, userId }) {
                   onMouseEnter={(e) => (e.currentTarget.style.textDecoration = "underline")}
                   onMouseLeave={(e) => (e.currentTarget.style.textDecoration = "none")}
                 >
-                  🔗 查看文件
+                  {t("submissions.viewFile")}
                 </a>
               </>
             )}
@@ -235,13 +241,8 @@ function ResultCard({ scan: initialScan, userId }) {
           {initialScan.analysis?.summary && (
             <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.7, padding: "10px 14px", background: "#ffffff", borderRadius: 8, border: "1px solid #e2e8f0", marginBottom: 16 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
-                <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 700, letterSpacing: .8 }}>🤖 AI 综合评价</span>
+                <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 700, letterSpacing: .8 }}>{t("submissions.aiAssessment")}</span>
                 {isUploadScan && initialScan.analysis.detectionType && initialScan.analysis.detectionType !== "original" && (() => {
-                  const DTYPE = {
-                    ui_ai:    { label: "AI设计稿",   color: "#7c3aed", bg: "#ede9fe" },
-                    image_ai: { label: "AI生成图像", color: "#ea580c", bg: "#fff7ed" },
-                    both:     { label: "双重AI特征", color: "#dc2626", bg: "#fee2e2" },
-                  };
                   const d = DTYPE[initialScan.analysis.detectionType];
                   return d ? (
                     <span style={{ fontSize: 10, padding: "1px 7px", borderRadius: 20, background: d.bg, color: d.color, fontWeight: 700 }}>
@@ -258,8 +259,8 @@ function ResultCard({ scan: initialScan, userId }) {
           {frames.length > 0 && (
             <div style={{ marginBottom: 14 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                <span style={{ fontSize: 11, color: "#64748b", fontWeight: 700, letterSpacing: .6 }}>FRAME 审阅进度</span>
-                <span style={{ fontSize: 11, color: "#94a3b8" }}>{reviewedCount} / {frames.length} 帧已记录</span>
+                <span style={{ fontSize: 11, color: "#64748b", fontWeight: 700, letterSpacing: .6 }}>{t("submissions.frameProgress")}</span>
+                <span style={{ fontSize: 11, color: "#94a3b8" }}>{t("submissions.framesRecorded", reviewedCount, frames.length)}</span>
               </div>
               <div style={{ height: 4, background: "#e2e8f0", borderRadius: 2, overflow: "hidden" }}>
                 <div style={{
@@ -286,7 +287,7 @@ function ResultCard({ scan: initialScan, userId }) {
             ))
           ) : (
             <div style={{ fontSize: 13, color: "#94a3b8", textAlign: "center", padding: "20px 0" }}>
-              暂无 Frame 级分析（此记录可能由旧版本生成）
+              {t("submissions.noFrameAnalysis")}
             </div>
           )}
         </div>
@@ -313,6 +314,7 @@ function SkeletonCard() {
 // ─── Page ──────────────────────────────────────────────────────────────────────
 export default function Submissions() {
   const { user, isLoaded } = useUser();
+  const { t } = useLang();
   const [scans, setScans] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -332,13 +334,13 @@ export default function Submissions() {
     <div style={{ padding: "28px 28px 48px" }}>
       <div style={{ marginBottom: 20 }}>
         <h1 style={{ fontSize: 22, fontWeight: 800, color: "#0f172a", margin: 0, letterSpacing: -.5 }}>Submissions</h1>
-        <p style={{ fontSize: 13, color: "#94a3b8", margin: "4px 0 0" }}>审阅每份设计稿的检测证据，填写学生姓名，记录你的判断</p>
+        <p style={{ fontSize: 13, color: "#94a3b8", margin: "4px 0 0" }}>{t("submissions.subtitle")}</p>
       </div>
 
       {!loading && scans.length > 0 && (
         <div style={{ marginBottom: 14 }}>
           <span style={{ fontSize: 11, color: "#64748b", padding: "3px 10px", border: "1px solid #cbd5e1", borderRadius: 20 }}>
-            共 {scans.length} 条记录
+            {t("submissions.count", scans.length)}
           </span>
         </div>
       )}
@@ -346,25 +348,25 @@ export default function Submissions() {
       {loading ? [1, 2, 3].map((i) => <SkeletonCard key={i} />) :
         scans.length === 0 ? (
           <div style={{ textAlign: "center", padding: "48px 0", color: "#94a3b8", fontSize: 13 }}>
-            暂无检测记录，{" "}
-            <Link href="/new-scan" style={{ color: "#2563eb", textDecoration: "none" }}>立即开始检测 →</Link>
+            {t("submissions.noRecords")}
+            <Link href="/new-scan" style={{ color: "#2563eb", textDecoration: "none" }}>{t("submissions.startNow")}</Link>
           </div>
         ) : scans.map((scan) => <ResultCard key={scan.id} scan={scan} userId={user?.id} />)
       }
 
       {!loading && scans.length > 0 && (
         <div style={{ marginTop: 24, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 16px" }}>
-          <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10, letterSpacing: .8, fontWeight: 600 }}>评分说明</div>
+          <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10, letterSpacing: .8, fontWeight: 600 }}>{t("submissions.scoreLegend")}</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {[
-              { color: "#22c55e", range: "0–39%",   desc: "原创可信，手工设计特征明显" },
-              { color: "#f59e0b", range: "40–69%",  desc: "部分疑似，建议当面询问" },
-              { color: "#ef4444", range: "70–100%", desc: "高度疑似AI生成，需进一步核查" },
+              { color: "#22c55e", range: "0–39%",   descKey: "submissions.score0desc" },
+              { color: "#f59e0b", range: "40–69%",  descKey: "submissions.score40desc" },
+              { color: "#ef4444", range: "70–100%", descKey: "submissions.score70desc" },
             ].map((l) => (
               <div key={l.range} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
                 <div style={{ width: 10, height: 10, borderRadius: 2, background: l.color, marginTop: 2, flexShrink: 0 }} />
                 <span style={{ fontSize: 12, color: l.color, fontWeight: 700, fontFamily: "monospace" }}>{l.range} </span>
-                <span style={{ fontSize: 12, color: "#94a3b8" }}>{l.desc}</span>
+                <span style={{ fontSize: 12, color: "#94a3b8" }}>{t(l.descKey)}</span>
               </div>
             ))}
           </div>
