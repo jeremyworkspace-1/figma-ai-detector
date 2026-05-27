@@ -110,7 +110,11 @@ function extractMostFrequentEditor(versions) {
 export async function POST(request) {
   try {
     const { userId } = await auth();
-    const { figmaUrl, pageId } = await request.json();
+    const { figmaUrl, pageId, lang } = await request.json();
+    // Language directive injected into the Claude prompt
+    const langDirective = lang === "en"
+      ? "6. Language: All text values (summary, label, and every string inside the flags arrays) MUST be written in English."
+      : "6. 语言：所有文字内容（summary、label、每个 flags 数组中的字符串）必须使用中文。";
 
     if (!figmaUrl?.trim()) {
       return NextResponse.json({ error: "请提供 Figma 链接" }, { status: 400 });
@@ -222,6 +226,7 @@ ${JSON.stringify(analysisData, null, 2)}
 3. 每个字符串必须写在同一行，不能换行。
 4. 不得有尾随逗号（如 [1,2,] 或 {"a":1,} 均非法）。
 5. flags 数组中每条字符串独立，不要嵌套数组。
+${langDirective}
 
 输出示例（严格按照此结构，替换为实际分析内容）：
 {"studentName":"张三","studentNameSource":"layer","overallScore":72,"label":"高度疑似AI","summary":"图层命名高度规范，文字内容使用占位符，配色严格遵循调色板。整体缺乏手工调整痕迹，AI生成可能性较高。","frames":[{"name":"首页","score":80,"flags":["图层命名机械规范如Frame1和Button/Primary","文字内容为模板占位符","配色仅使用三种固定颜色"]},{"name":"详情页","score":65,"flags":["组件结构高度模板化","间距完全等分缺乏调整"]}]}

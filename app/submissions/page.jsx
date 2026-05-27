@@ -45,7 +45,7 @@ function ResultCard({ scan: initialScan, userId }) {
 
   const score      = initialScan.ai_score;
   const color      = score >= 70 ? "#ef4444" : score >= 40 ? "#f59e0b" : "#22c55e";
-  const badge      = score >= 70 ? t("submissions.badgeHighlyAI") : score >= 40 ? t("submissions.badgePartialAI") : t("submissions.badgeOriginal");
+  const badge      = score >= 70 ? t("badge.highlyAIFull") : score >= 40 ? t("badge.partialAIFull") : t("badge.originalFull");
   const frames     = initialScan.analysis?.frames || [];
   const nameSource = initialScan.analysis?.studentNameSource ?? null;
   const reviewedCount = Object.keys(reviews).length;

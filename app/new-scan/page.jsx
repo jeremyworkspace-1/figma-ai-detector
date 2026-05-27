@@ -104,7 +104,7 @@ function IconPDF() {
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function NewScan() {
   const router = useRouter();
-  const { t } = useLang();
+  const { t, lang } = useLang();
 
   // ── Step ────────────────────────────────────────────────────────────────────
   const [step, setStep] = useState(1);
@@ -224,7 +224,7 @@ export default function NewScan() {
     try {
       const res  = await fetch("/api/analyze-figma", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ figmaUrl, pageId: selectedPageId }),
+        body: JSON.stringify({ figmaUrl, pageId: selectedPageId, lang }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "分析失败");
@@ -256,6 +256,7 @@ export default function NewScan() {
     try {
       const body = new FormData();
       body.append("file", uploadFile);
+      body.append("lang", lang);
       const res  = await fetch("/api/analyze-upload", { method: "POST", body });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "分析失败");
