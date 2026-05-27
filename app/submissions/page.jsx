@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { useUser } from "@clerk/nextjs";
 import { supabase } from "../lib/supabase";
 import { FrameReviewCard } from "../components/FrameReviewCard";
 
@@ -34,7 +35,7 @@ function ScoreRing({ score, size = 60 }) {
 }
 
 // ─── ResultCard ────────────────────────────────────────────────────────────────
-function ResultCard({ scan: initialScan }) {
+function ResultCard({ scan: initialScan, userId }) {
   const [expanded,     setExpanded]     = useState(false);
   const [studentName,  setStudentName]  = useState(initialScan.student_name || "");
   const [nameEditing,  setNameEditing]  = useState(false);
@@ -75,7 +76,9 @@ function ResultCard({ scan: initialScan }) {
 
   const saveName = async (nameToSave = studentName) => {
     setNameSaving(true);
-    await supabase.from("scans").update({ student_name: nameToSave }).eq("id", initialScan.id);
+    await supabase.from("scans").update({ student_name: nameToSave })
+      .eq("id", initialScan.id)
+      .eq("user_id", userId);
     setNameSaving(false);
     setNameDirty(false);
     setNameSaved(true);
@@ -102,7 +105,9 @@ function ResultCard({ scan: initialScan }) {
       updated = { ...reviews, [frameName]: { action, note, reviewedAt: new Date().toISOString() } };
     }
     setReviews(updated);
-    await supabase.from("scans").update({ teacher_reviews: updated }).eq("id", initialScan.id);
+    await supabase.from("scans").update({ teacher_reviews: updated })
+      .eq("id", initialScan.id)
+      .eq("user_id", userId);
   };
 
   return (
@@ -307,17 +312,21 @@ function SkeletonCard() {
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 export default function Submissions() {
+  const { user, isLoaded } = useUser();
   const [scans, setScans] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.from("scans").select("*").order("created_at", { ascending: false })
+    if (!isLoaded || !user) return;
+    supabase.from("scans").select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
       .then(({ data, error }) => {
         if (error) console.error(error);
         else setScans(data || []);
         setLoading(false);
       });
-  }, []);
+  }, [isLoaded, user]);
 
   return (
     <div style={{ padding: "28px 28px 48px" }}>
@@ -340,7 +349,7 @@ export default function Submissions() {
             暂无检测记录，{" "}
             <Link href="/new-scan" style={{ color: "#2563eb", textDecoration: "none" }}>立即开始检测 →</Link>
           </div>
-        ) : scans.map((scan) => <ResultCard key={scan.id} scan={scan} />)
+        ) : scans.map((scan) => <ResultCard key={scan.id} scan={scan} userId={user?.id} />)
       }
 
       {!loading && scans.length > 0 && (

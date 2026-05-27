@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useUser } from "@clerk/nextjs";
 import { supabase } from "./lib/supabase";
 
 function StatCard({ label, value, color, bg }) {
@@ -43,15 +44,18 @@ function SkeletonRow() {
 }
 
 export default function Dashboard() {
+  const { user, isLoaded } = useUser();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ total: 0, avgScore: 0, highRisk: 0 });
   const [recent, setRecent] = useState([]);
 
   useEffect(() => {
+    if (!isLoaded || !user) return;
     async function load() {
       const { data, error } = await supabase
         .from("scans")
         .select("id, student_name, figma_url, page_name, ai_score, created_at")
+        .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
       if (error) { console.error(error); setLoading(false); return; }
@@ -67,7 +71,7 @@ export default function Dashboard() {
       setLoading(false);
     }
     load();
-  }, []);
+  }, [isLoaded, user]);
 
   const avgColor = stats.avgScore >= 60 ? "#d97706" : "#16a34a";
   const avgBg   = stats.avgScore >= 60 ? "#fffbeb" : "#f0fdf4";
